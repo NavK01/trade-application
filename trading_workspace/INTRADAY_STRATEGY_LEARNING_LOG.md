@@ -244,3 +244,29 @@ This persistent document tracks the iterative backtesting, quantitative metrics,
    - **Primary Engine**: Opening Range Breakout (ORB-15m) with Midpoint Stop-Loss and Target $1.5R/2.0R$.
    - **Secondary Engine**: 9/20 EMA Pullback Scalper (only active on stocks that have already confirmed an ORB breakout or are strictly above VWAP).
    - **Exit Overlays**: Take profit at Upper Bollinger Band ($+2\sigma$) or Camarilla $H5$.
+
+
+---
+
+## Iteration 8: Dual-Model Production Architecture (DeepSeek Flash 50k+ Live Trader & Claude Opus Benchmark)
+
+* **Deployment Date**: 2026-10-29
+* **Live Trading Execution Engine**: `deepseek-ai/deepseek-v4.1-flash-maas` (Vertex AI Global MaaS)
+* **Comparative Benchmark Engine**: `claude-opus-4-6-thinking` via native Antigravity CLI (`agy`) with Antigravity Pro subscription (**₹0.00 / $0.00 Cloud Credits consumed**)
+* **Data Context Ingestion**: Massive Multi-Timeframe Payload (~50,000 prompt tokens per cycle):
+  - 350+ 5-minute candles with technical overlays (VWAP, EMA 9/20/50, SuperTrend 10,3, Bollinger Bands 20,2, RSI-14, ATR-14, Volume SMA 20).
+  - 30-day daily macro candles with session-derived Camarilla Pivots ($H1-H5, L1-L5$) and Classical Floor Pivots.
+  - Day-Trader Opening Range Breakout (ORB-15m & ORB-30m) analysis and Monte Carlo Time Machine simulation odds.
+  - Intraday Confluence Evaluation across all 7 quantitative strategies.
+  - Live Market Breadth (Nifty 50, Bank Nifty, Sensex, India VIX) and news sentiment feed.
+  - The 7 Empirical Iteration Rules and Quant Axioms.
+
+### Live Production Verification on Azure VM
+* **Production VM**: `crimson@crimson.southindia.cloudapp.azure.com` (16 GB RAM, 4 vCPUs)
+* **Services Active**:
+  - `gemini-agent.service` (PID 63287, Port 7000): FastAPI, Live Market Feed, Dual-Model Predictor, WebSocket Broadcasting.
+  - `gemini-supervisor.service` (PID 61523): 24/7 Autonomous Self-Healing Quant Optimizer & Safety Watchdog.
+* **Cycle Execution Verification**:
+  - DeepSeek Flash MaaS: Consumed 49,946 input tokens, returned verified trade recommendation in ~16s.
+  - Claude Opus 4.6 Thinking: Evaluated identical market context with zero Google Cloud API cost.
+  - Both models agreed on capital preservation (`HOLD`) at the 15:25 IST market cutoff.

@@ -150,7 +150,7 @@ class AutonomousQuantSupervisor:
                 )
                 logger.info(f"🛠️ Dispatching emergency fix to Antigravity ({CODING_MODEL})...")
                 fix_proc = await asyncio.create_subprocess_exec(
-                    AGY_BIN, "-p", prompt, "--model", CODING_MODEL, "--dangerously-skip-permissions",
+                    AGY_BIN, "-p", prompt, "--model", CODING_MODEL, "--dangerously-skip-permissions", "--mode", "accept-edits",
                     cwd=BASE_DIR, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
                 )
                 f_out, f_err = await asyncio.wait_for(fix_proc.communicate(), timeout=120)
@@ -204,7 +204,7 @@ class AutonomousQuantSupervisor:
 
         try:
             opt_proc = await asyncio.create_subprocess_exec(
-                AGY_BIN, "-p", prompt, "--model", CODING_MODEL, "--dangerously-skip-permissions",
+                AGY_BIN, "-p", prompt, "--model", CODING_MODEL, "--dangerously-skip-permissions", "--mode", "accept-edits",
                 cwd=BASE_DIR, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
             out, err = await asyncio.wait_for(opt_proc.communicate(), timeout=180)

@@ -492,7 +492,7 @@ class ArgonPredictor:
         for model_cand in models_to_try:
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    agy_bin, "-p", prompt_text, "--model", model_cand, "--dangerously-skip-permissions",
+                    agy_bin, "-p", prompt_text, "--model", model_cand, "--dangerously-skip-permissions", "--mode", "accept-edits",
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )

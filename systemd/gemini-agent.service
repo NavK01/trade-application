@@ -1,0 +1,18 @@
+[Unit]
+Description=Gemini Quant Agent & Fast Trading Platform
+After=network.target
+
+[Service]
+Type=simple
+User=crimson
+WorkingDirectory=/home/crimson/GeminiAgent
+Environment="PATH=/home/crimson/GeminiAgent/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/crimson/GeminiAgent/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 7000 --workers 1
+Restart=always
+RestartSec=5
+
+# Resource limits
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

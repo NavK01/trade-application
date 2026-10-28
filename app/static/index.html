@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini & DeepSeek Quant Trading Terminal</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- TradingView Lightweight Charts Library (Local) -->
+  <script src="/static/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- Top Navigation Header with Live Market Ticker & Dual Agent Arena Leaderboard -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="logo-gemini">✦</div>
+        <div>
+          <h1>GEMINI QUANT TERMINAL • AI DUAL ARENA</h1>
+          <span class="sub-badge">Gemini 3.8 Flash vs DeepSeek Flash • 5-Min Cycles • Day Trader Skill</span>
+        </div>
+      </div>
+
+      <!-- Live Indian Market Indices Ticker -->
+      <div class="market-ticker" id="market-ticker">
+        <div id="market-status-pill" class="market-status-pill" title="NSE/BSE Trading Hours: 09:15 - 15:30 IST">
+          <span id="market-status-dot" class="status-dot dot-closed"></span>
+          <span id="market-status-text">Market Closed (Opens 09:15 IST)</span>
+        </div>
+        <span class="ticker-item"><span class="ticker-name">NIFTY 50:</span> <span id="nifty-val">--</span></span>
+        <span class="ticker-item"><span class="ticker-name">SENSEX:</span> <span id="sensex-val">--</span></span>
+        <span class="ticker-item"><span class="ticker-name">BANK NIFTY:</span> <span id="banknifty-val">--</span></span>
+        <span class="ticker-item"><span class="ticker-name">INDIA VIX:</span> <span id="vix-val">--</span></span>
+      </div>
+
+      <!-- Top Action Controls -->
+      <div class="account-pill">
+        <div class="arena-leader-pill" id="arena-leader-pill" title="Real-time Return Leader">
+          <span id="leader-text">⚔️ Dual Arena Initialized (₹10K Each)</span>
+        </div>
+        <div class="server-badge" id="server-badge" title="Live VM Server Health">
+          <span id="server-ram-tag">RAM: --%</span>
+          <span id="server-cpu-tag">CPU: --%</span>
+        </div>
+        <button id="btn-trigger-arena-cycle" class="btn btn-small btn-primary" title="Trigger both Gemini & DeepSeek AI models on scanned stock">⚔️ Run Arena Cycle</button>
+        <button id="btn-pre-market-scan" class="btn btn-small btn-accent" title="Run Pre-Market Google Search analysis for budget stocks">🌅 Pre-Market</button>
+        <button id="btn-reset-account" class="btn btn-small btn-secondary" title="Reset both testing dummy accounts to ₹10,000 each">🔄 Reset ₹10K</button>
+        <button id="btn-show-instructions" class="btn btn-small btn-secondary">📖 Guide</button>
+        <div class="user-auth-pill" id="user-auth-pill" style="display: none;">
+          <span class="user-badge" id="user-badge">👤 <span id="current-username">admin</span></span>
+          <button id="btn-logout" class="btn btn-small btn-secondary btn-logout" title="Sign out">🚪 Sign Out</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Side-by-Side AI Arena Strip: Gemini 3.8 Flash vs DeepSeek Flash -->
+    <section class="arena-strip">
+      
+      <!-- Card 1: Gemini 3.8 Flash -->
+      <div class="arena-card gemini-card">
+        <div class="arena-card-header">
+          <div class="agent-tag gemini-tag">
+            <span class="agent-dot dot-gemini"></span>
+            <strong>GEMINI 3.8 FLASH</strong>
+            <span class="model-id-badge">Vertex AI (super-512620)</span>
+          </div>
+          <div class="agent-metrics">
+            <span>Cash: <strong id="gemini-cash">₹ 10,000.00</strong></span>
+            <span>Realized: <strong id="gemini-pnl" class="val-green">₹ 0.00 (+0.0%)</strong></span>
+            <span>Win Rate: <strong id="gemini-winrate">0.0%</strong></span>
+          </div>
+        </div>
+
+        <div class="arena-card-body">
+          <div class="pred-signal-box">
+            <span id="gemini-signal" class="signal-badge signal-buy">BUY</span>
+            <span id="gemini-sym" class="pred-sym">SBIN</span>
+            <span id="gemini-conf" class="pred-confidence">Conf: 76%</span>
+          </div>
+          <div class="pred-details">
+            <span>Entry: <strong id="gemini-entry">₹ 815.0</strong></span>
+            <span>Target: <strong id="gemini-target">₹ 825.0</strong></span>
+            <span>Stop: <strong id="gemini-stop">₹ 810.0</strong></span>
+            <span>R:R: <strong id="gemini-rr">1:2.0</strong></span>
+          </div>
+          <div class="pred-catalyst-box">
+            <span id="gemini-catalyst" class="catalyst-text">ORB Setup: Midpoint Stop with healthy market breadth.</span>
+          </div>
+          <div class="agent-footer-row">
+            <label class="switch">
+              <input type="checkbox" id="toggle-auto-gemini" checked>
+              <span class="slider round"></span>
+            </label>
+            <span class="toggle-label">Auto-Execute (Gemini)</span>
+            <span id="gemini-positions-count" class="badge badge-idle">0 Open</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Center Arena Versus Pillar & 5-Min Countdown -->
+      <div class="arena-center-pillar">
+        <div class="vs-badge">VS</div>
+        <div class="cycle-timer-wrap">
+          <span class="timer-label">5-Min AI Cycle in:</span>
+          <span id="argon-countdown" class="countdown-highlight">05:00</span>
+        </div>
+        <span class="scan-target-tag">Target: <strong id="arena-current-symbol">SBIN</strong></span>
+      </div>
+
+      <!-- Card 2: DeepSeek Flash MaaS -->
+      <div class="arena-card deepseek-card">
+        <div class="arena-card-header">
+          <div class="agent-tag deepseek-tag">
+            <span class="agent-dot dot-deepseek"></span>
+            <strong>DEEPSEEK FLASH MAAS</strong>
+            <span class="model-id-badge">Vertex Global MaaS</span>
+          </div>
+          <div class="agent-metrics">
+            <span>Cash: <strong id="deepseek-cash">₹ 10,000.00</strong></span>
+            <span>Realized: <strong id="deepseek-pnl" class="val-green">₹ 0.00 (+0.0%)</strong></span>
+            <span>Win Rate: <strong id="deepseek-winrate">0.0%</strong></span>
+          </div>
+        </div>
+
+        <div class="arena-card-body">
+          <div class="pred-signal-box">
+            <span id="deepseek-signal" class="signal-badge signal-hold">HOLD</span>
+            <span id="deepseek-sym" class="pred-sym">SBIN</span>
+            <span id="deepseek-conf" class="pred-confidence">Conf: 65%</span>
+          </div>
+          <div class="pred-details">
+            <span>Entry: <strong id="deepseek-entry">₹ 815.0</strong></span>
+            <span>Target: <strong id="deepseek-target">₹ 825.0</strong></span>
+            <span>Stop: <strong id="deepseek-stop">₹ 810.0</strong></span>
+            <span>R:R: <strong id="deepseek-rr">1:2.0</strong></span>
+          </div>
+          <div class="pred-catalyst-box">
+            <span id="deepseek-catalyst" class="catalyst-text">Day Trader Time Machine: Replays lean toward target.</span>
+          </div>
+          <div class="agent-footer-row">
+            <label class="switch">
+              <input type="checkbox" id="toggle-auto-deepseek" checked>
+              <span class="slider round"></span>
+            </label>
+            <span class="toggle-label">Auto-Execute (DeepSeek)</span>
+            <span id="deepseek-positions-count" class="badge badge-idle">0 Open</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Main Workspace Grid: Charts, Scanner, Portfolio, and AI Tools -->
+    <main class="grid-layout-arena">
+      
+      <!-- Column 1: Interactive Candlestick Chart (TradingView Lightweight Charts) -->
+      <section class="panel chart-panel">
+        <div class="panel-header chart-header-row">
+          <div class="chart-title-group">
+            <h2>📈 Professional Chart (Lightweight Charts)</h2>
+            <div class="chart-symbol-badge">
+              <span id="chart-symbol-title">SBIN</span>
+              <span id="chart-ltp" class="chart-ltp-val">₹ 815.00</span>
+              <span id="chart-change" class="chart-chg-val val-green">+0.00%</span>
+            </div>
+          </div>
+
+          <!-- Timeframe & Symbol Controls -->
+          <div class="chart-controls">
+            <div class="quick-symbols-bar" id="quick-symbols-bar">
+              <button class="chip-sym active" data-sym="SBIN">SBIN</button>
+              <button class="chip-sym" data-sym="RELIANCE">RELIANCE</button>
+              <button class="chip-sym" data-sym="TATASTEEL">TATASTEEL</button>
+              <button class="chip-sym" data-sym="JSWSTEEL">JSWSTEEL</button>
+              <button class="chip-sym" data-sym="INFY">INFY</button>
+              <button class="chip-sym" data-sym="ITC">ITC</button>
+              <button class="chip-sym" data-sym="KOTAKBANK">KOTAKBANK</button>
+            </div>
+            <div class="timeframe-buttons">
+              <button class="btn-tf" data-tf="1m" data-period="1d">1m</button>
+              <button class="btn-tf active" data-tf="5m" data-period="5d">5m</button>
+              <button class="btn-tf" data-tf="15m" data-period="5d">15m</button>
+              <button class="btn-tf" data-tf="1h" data-period="1mo">1h</button>
+              <button class="btn-tf" data-tf="1d" data-period="3mo">1D</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Candlestick Chart Container -->
+        <div class="chart-container-wrap">
+          <div id="tv-chart-container" class="tv-chart-container"></div>
+          <div class="chart-legend">
+            <span class="legend-item"><span class="legend-color legend-blue"></span> 20 EMA</span>
+            <span class="legend-item"><span class="legend-color legend-orange"></span> VWAP</span>
+            <span class="legend-item"><span class="legend-marker marker-buy">▲</span> Buy Marker</span>
+            <span class="legend-item"><span class="legend-marker marker-sell">▼</span> Sell Marker</span>
+          </div>
+        </div>
+
+        <!-- Ultra Fast Order Placement Bar Directly under Chart -->
+        <div class="chart-order-bar">
+          <div class="order-input-group">
+            <label for="order-account-select">Agent:</label>
+            <select id="order-account-select" class="form-select-small">
+              <option value="gemini_flash" selected>Gemini 3.8 Flash (Account A)</option>
+              <option value="deepseek_flash">DeepSeek Flash (Account B)</option>
+            </select>
+          </div>
+
+          <div class="order-input-group">
+            <label for="order-symbol-input">Stock:</label>
+            <input type="text" id="order-symbol-input" value="SBIN" class="input-sym" />
+          </div>
+
+          <div class="order-input-group">
+            <label for="fast-qty">Qty:</label>
+            <input type="number" id="fast-qty" value="5" min="1" max="500" class="input-qty" />
+          </div>
+
+          <button id="btn-fast-buy" class="btn btn-buy">
+            <span>⚡ BUY MARKET</span>
+          </button>
+          <button id="btn-fast-sell" class="btn btn-sell">
+            <span>⚡ SELL MARKET</span>
+          </button>
+          <span id="latency-tag" class="latency-badge">Latency: -- ms</span>
+        </div>
+      </section>
+
+      <!-- Column 2: Dynamic Scanner & Multi-Agent Portfolio -->
+      <section class="panel scanner-portfolio-panel">
+        
+        <!-- Tab Header: Scanner vs Positions vs Orders -->
+        <div class="panel-header sub-header-tabs">
+          <div class="tab-btn-row">
+            <button class="tab-btn active" id="tab-btn-scanner" data-target="tab-scanner">
+              ⚡ High-Return Scanner (<span id="scanner-count-badge">0</span>)
+            </button>
+            <button class="tab-btn" id="tab-btn-positions" data-target="tab-positions">
+              💼 Open Positions (<span id="positions-count-badge">0</span>)
+            </button>
+            <button class="tab-btn" id="tab-btn-orders" data-target="tab-orders">
+              📜 Trade History
+            </button>
+          </div>
+          <button id="btn-rescan-market" class="btn btn-small btn-secondary" title="Re-scan 30+ liquid Indian stocks for breakouts">🔍 Re-Scan</button>
+        </div>
+
+        <!-- Tab 1: Dynamic Market Scanner (30+ Stocks) -->
+        <div class="tab-content active" id="tab-scanner">
+          <div class="table-container scanner-table-wrap">
+            <table class="market-table" id="scanner-table">
+              <thead>
+                <tr>
+                  <th>Stock</th>
+                  <th>LTP (₹)</th>
+                  <th>Change</th>
+                  <th>Setup Pattern</th>
+                  <th>Score</th>
+                  <th>Plan (Stop / Tgt)</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="scanner-tbody">
+                <tr><td colspan="7" class="hint-text text-center">Scanning high-momentum Indian equities...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 2: Open Positions (Both Agents) -->
+        <div class="tab-content" id="tab-positions" style="display: none;">
+          <div class="positions-filter-bar">
+            <span>Filter Account:</span>
+            <button class="chip-filter active" data-acc="all">All Agents</button>
+            <button class="chip-filter" data-acc="gemini_flash">Gemini Flash</button>
+            <button class="chip-filter" data-acc="deepseek_flash">DeepSeek Flash</button>
+          </div>
+          <div class="table-container">
+            <table class="market-table" id="positions-table">
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th>Stock</th>
+                  <th>Qty</th>
+                  <th>Avg (₹)</th>
+                  <th>LTP (₹)</th>
+                  <th>PnL (₹)</th>
+                  <th>Close</th>
+                </tr>
+              </thead>
+              <tbody id="positions-tbody">
+                <tr><td colspan="7" class="hint-text text-center">No active positions in either account.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 3: Trade Order History -->
+        <div class="tab-content" id="tab-orders" style="display: none;">
+          <div class="table-container">
+            <table class="market-table" id="orders-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Agent</th>
+                  <th>Symbol</th>
+                  <th>Action</th>
+                  <th>Qty</th>
+                  <th>Price (₹)</th>
+                  <th>PnL (₹)</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="orders-tbody">
+                <tr><td colspan="8" class="hint-text text-center">No trade orders recorded yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Continuous Learning & Past Performance Log -->
+        <div class="panel-header sub-header" style="margin-top: 10px;">
+          <h2>🧠 Day Trader & AI Strategy Memory</h2>
+        </div>
+        <div class="learning-container" id="learning-container">
+          <div class="hint-text text-center" style="padding: 10px;">Loading retrospective strategy lessons...</div>
+        </div>
+      </section>
+
+      <!-- Column 3: Live Quant Chatbot, Live Voice & Token Metrics -->
+      <section class="panel chat-voice-panel">
+        <div class="panel-header">
+          <h2>💬 Live Quant Chatbot (Gemini + Search)</h2>
+          <div class="header-right chat-controls">
+            <label class="search-toggle-label" title="Toggle built-in Google Search grounding">
+              <input type="checkbox" id="chat-search-toggle" checked />
+              <span class="search-toggle-text">🔍 Search</span>
+            </label>
+            <select id="chat-model-select" class="form-select chat-model-dropdown" title="Select Model">
+              <option value="gemini-3.8-flash" selected>Gemini 3.8 Flash</option>
+              <option value="deepseek-ai/deepseek-v4.1-flash-maas">DeepSeek Flash MaaS</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="chat-messages" id="chat-messages">
+          <div class="chat-msg system-msg">
+            <span class="sender">Trading Assistant:</span>
+            <span class="text">Welcome to the Gemini Quant Arena! Both <strong>Gemini 3.8 Flash</strong> and <strong>DeepSeek Flash</strong> are running in parallel on 5-minute cycles with ₹10,000 credits each. You can query breakout stocks, inspect charts, or trade instantly (e.g. <code>"Buy 10 SBIN"</code> or <code>"Sell 5 RELIANCE"</code>).</span>
+          </div>
+        </div>
+
+        <div class="chat-input-bar">
+          <input type="text" id="chat-input" placeholder="Ask about stocks, search news, or trade (e.g. 'Buy 10 SBIN')..." />
+          <button id="btn-send-chat" class="btn btn-primary">Send</button>
+        </div>
+
+        <!-- Real-Time Voice Bridge & Audio Visualizer -->
+        <div class="voice-hero-arena">
+          <div class="voice-top-row">
+            <span>🎙️ Gemini Live Voice Stream</span>
+            <canvas id="visualizer" width="180" height="28"></canvas>
+          </div>
+          <div class="mic-action-box">
+            <button id="btn-toggle-live" class="btn btn-primary btn-small">
+              <span id="btn-live-icon">▶</span>
+              <span id="btn-live-text">Connect Voice</span>
+            </button>
+            <button id="btn-toggle-mic" class="btn btn-secondary btn-small" disabled>
+              <span id="btn-mic-icon">🎤</span>
+              <span id="btn-mic-text">Mic Off</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Token Accounting Card -->
+        <div class="token-card-mini" id="token-card">
+          <div class="token-mini-row">
+            <span>Daily Tokens:</span>
+            <strong id="tokens-count">0 / 100,000</strong>
+          </div>
+          <div class="token-mini-row">
+            <span>AI Cost:</span>
+            <strong id="tokens-cost">₹ 0.00</strong>
+          </div>
+          <div class="token-mini-row">
+            <span>Combined PnL:</span>
+            <strong id="tokens-trading-pnl">₹ 0.00</strong>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- INSTRUCTIONS / USER GUIDE MODAL -->
+    <div id="instructions-modal" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>📖 Gemini Quant Terminal & AI Arena Guide</h2>
+          <button id="btn-close-modal" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <h3>⚔️ 1. Gemini 3.8 Flash vs DeepSeek Flash Dual Arena</h3>
+          <p>Two independent AI instances trade in parallel with separate initial credits (₹10,000 each):</p>
+          <ul>
+            <li><strong>Account A (Gemini 3.8 Flash)</strong>: Vertex AI model optimized for momentum, news sentiment, and tight 1:2.0 risk-reward setups.</li>
+            <li><strong>Account B (DeepSeek Flash MaaS)</strong>: DeepSeek model deployed via Vertex Global endpoint, optimized for ultra-fast scalping.</li>
+            <li><strong>5-Minute Cycles</strong>: Both models evaluate the market every 5 minutes and auto-execute when confidence &ge; 75%.</li>
+          </ul>
+
+          <h3>📈 2. Professional Candlestick Charts & Technical Overlays</h3>
+          <p>Interactive TradingView Lightweight Charts with:</p>
+          <ul>
+            <li>Real-time 1m, 5m, 15m, 1h, and 1D candlestick bars for Indian equities.</li>
+            <li><strong>20 EMA (Blue)</strong> and <strong>VWAP (Orange)</strong> indicator lines.</li>
+            <li><strong>Execution Markers</strong>: Green arrows for BUY, Red arrows for SELL with model attribution.</li>
+          </ul>
+
+          <h3>⚡ 3. Dynamic Multi-Stock Scanner (Beyond Fixed Stocks)</h3>
+          <p>Automated scanner screens 30+ liquid Indian large-caps and midcaps (JSW Steel, Coal India, Hindalco, Bel, Bhel, Tata Steel, etc.) for high-return setups: Opening Range Breakouts (ORB), 20-Day Highs, and Oversold Bounces.</p>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-got-it" class="btn btn-primary">Got it, Let's Trade!</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOGIN AUTHENTICATION MODAL -->
+    <div id="login-modal" class="modal-overlay login-overlay" style="display: none;">
+      <div class="modal-card login-card">
+        <div class="login-header">
+          <div class="login-logo-glow">🔐</div>
+          <h2>Administrator Sign In</h2>
+          <p class="login-subtitle">Secured Gemini Quant Trading Terminal</p>
+        </div>
+        <form id="login-form" class="login-form" onsubmit="return false;">
+          <div id="login-error-msg" class="login-error-msg" style="display: none;"></div>
+          <div class="form-group login-form-group">
+            <label for="login-username">Administrator Username</label>
+            <input type="text" id="login-username" class="login-input" placeholder="e.g. admin" autocomplete="username" required />
+          </div>
+          <div class="form-group login-form-group">
+            <label for="login-password">Password</label>
+            <input type="password" id="login-password" class="login-input" placeholder="••••••••••••" autocomplete="current-password" required />
+          </div>
+          <button type="submit" id="btn-login-submit" class="btn btn-primary btn-block btn-login-action">
+            <span>⚡ Unlock Trading Panel</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

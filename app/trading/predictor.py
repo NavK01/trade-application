@@ -188,7 +188,7 @@ class ArgonPredictor:
 
             try:
                 logger.info(f"⚡ Starting Dual Arena Cycle #{self.cycle_count} (Mode: {attention_info['level']}, interval: {self.interval_seconds}s)")
-                await asyncio.wait_for(self.run_arena_cycle(), timeout=60.0)
+                await asyncio.wait_for(self.run_arena_cycle(), timeout=85.0)
             except asyncio.TimeoutError:
                 logger.error(f"Arena prediction cycle #{self.cycle_count} timed out after 60s. Advancing to next interval.")
             except Exception as e:
@@ -492,11 +492,11 @@ class ArgonPredictor:
         for model_cand in models_to_try:
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    agy_bin, "-p", prompt_text, "--model", model_cand,
+                    agy_bin, "-p", prompt_text, "--model", model_cand, "--dangerously-skip-permissions",
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=35.0)
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=50.0)
                 out_text = stdout.decode("utf-8").strip() if stdout else ""
                 if proc.returncode == 0 and out_text:
                     m = re.search(r"\{.*\}", out_text, re.DOTALL)
@@ -623,11 +623,11 @@ class ArgonPredictor:
         try:
             results = await asyncio.wait_for(
                 asyncio.gather(task_deepseek, task_opus, return_exceptions=True),
-                timeout=45.0
+                timeout=65.0
             )
             res_deepseek, res_opus = results[0], results[1]
         except asyncio.TimeoutError:
-            logger.error(f"Arena parallel queries for {sym} timed out after 45s. Utilizing fallback setups.")
+            logger.error(f"Arena parallel queries for {sym} timed out after 65s. Utilizing fallback setups.")
             res_deepseek = self._generate_algorithmic_fallback(sym, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
             res_opus = self._generate_algorithmic_fallback(sym, "gemini_flash", "Claude Opus (Fallback)", orb_plan, sim_odds)
 

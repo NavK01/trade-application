@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import hmac
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Response, Request, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Response, Request, Depends, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -455,6 +455,24 @@ async def trigger_emergency_decision(
 ):
     """Trigger emergency AI decision for critical market movements or adverse price drops."""
     return await argon_predictor.evaluate_emergency_decision(symbol, drop_pct, current_pnl, reason)
+
+@app.post("/api/trading/backtest")
+async def run_backtest_endpoint(
+    req: Dict[str, Any] = Body(default={}),
+    auth_user: Dict[str, Any] = Depends(require_auth),
+):
+    """Run an on-demand historical intraday backtest using DeepSeek Flash MaaS across past 5-min bars."""
+    from app.trading.backtester import backtest_engine
+    symbols = req.get("symbols", ["RELIANCE", "TCS", "INFY", "VEDL", "SBIN", "ICICIBANK"])
+    period = req.get("period", "5d")
+    use_deepseek = req.get("use_deepseek", True)
+    time_filter = req.get("time_filter", True)
+    return await backtest_engine.run_backtest(
+        symbols=symbols,
+        period=period,
+        use_deepseek=use_deepseek,
+        time_filter=time_filter,
+    )
 
 @app.get("/api/strategies")
 async def get_all_strategies(auth_user: Dict[str, Any] = Depends(require_auth)):

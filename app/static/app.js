@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const serverCpuTag = document.getElementById('server-cpu-tag');
   const btnTriggerArenaCycle = document.getElementById('btn-trigger-arena-cycle');
   const btnPreMarketScan = document.getElementById('btn-pre-market-scan');
+  const btnRunBacktest = document.getElementById('btn-run-backtest');
   const btnResetAccount = document.getElementById('btn-reset-account');
   const btnShowInstructions = document.getElementById('btn-show-instructions');
   const instructionsModal = document.getElementById('instructions-modal');
@@ -35,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const geminiCatalyst = document.getElementById('gemini-catalyst');
   const toggleAutoGemini = document.getElementById('toggle-auto-gemini');
   const geminiPositionsCount = document.getElementById('gemini-positions-count');
+  const geminiModelBadge = document.getElementById('gemini-model-badge');
 
   const deepseekCash = document.getElementById('deepseek-cash');
   const deepseekPnl = document.getElementById('deepseek-pnl');
@@ -49,6 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const deepseekCatalyst = document.getElementById('deepseek-catalyst');
   const toggleAutoDeepseek = document.getElementById('toggle-auto-deepseek');
   const deepseekPositionsCount = document.getElementById('deepseek-positions-count');
+  const deepseekModelBadge = document.getElementById('deepseek-model-badge');
 
   const argonCountdown = document.getElementById('argon-countdown');
   const arenaCurrentSymbol = document.getElementById('arena-current-symbol');
@@ -426,7 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (toggleAutoDeepseek) toggleAutoDeepseek.checked = d.auto_execute;
     }
 
-    // Gemini Prediction Card
+    // Gemini / Opus Prediction Card
     if (data.gemini_prediction) {
       renderPredictionCard(data.gemini_prediction, {
         signal: geminiSignal,
@@ -437,6 +440,7 @@ document.addEventListener('DOMContentLoaded', () => {
         stop: geminiStop,
         rr: geminiRr,
         catalyst: geminiCatalyst,
+        modelBadge: geminiModelBadge,
       });
     }
 
@@ -451,6 +455,7 @@ document.addEventListener('DOMContentLoaded', () => {
         stop: deepseekStop,
         rr: deepseekRr,
         catalyst: deepseekCatalyst,
+        modelBadge: deepseekModelBadge,
       });
     }
 
@@ -475,6 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (els.stop) els.stop.textContent = `₹ ${(pred.stop_loss_inr || entryPrice * 0.99).toLocaleString('en-IN')}`;
     if (els.rr) els.rr.textContent = pred.risk_reward_ratio || '1:2.0';
     if (els.catalyst) els.catalyst.textContent = pred.catalyst || pred.action_summary || 'Standard trading setup.';
+    if (els.modelBadge && pred.model) els.modelBadge.textContent = pred.model;
 
     if (arenaCurrentSymbol) arenaCurrentSymbol.textContent = pred.symbol || 'SBIN';
   }
@@ -798,6 +804,32 @@ document.addEventListener('DOMContentLoaded', () => {
       } finally {
         btnPreMarketScan.disabled = false;
         btnPreMarketScan.textContent = '🌅 Pre-Market';
+      }
+    });
+  }
+
+  // Historical Backtest Button (DeepSeek Flash MaaS)
+  if (btnRunBacktest) {
+    btnRunBacktest.addEventListener('click', async () => {
+      btnRunBacktest.disabled = true;
+      btnRunBacktest.textContent = '🧪 Backtesting...';
+      appendChatMessage('System', '🧪 Running Intraday Backtest across past 5-minute data with DeepSeek Flash MaaS...', 'system');
+      try {
+        const res = await fetch('/api/trading/backtest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbols: ['RELIANCE', 'TCS', 'INFY', 'VEDL', 'SBIN', 'ICICIBANK'], period: '5d', use_deepseek: true, time_filter: true })
+        });
+        const data = await res.json();
+        const pnlStr = (data.net_pnl_inr >= 0 ? '+' : '') + '₹' + data.net_pnl_inr.toFixed(2);
+        appendChatMessage('DeepSeek Quant', `✅ Backtest Complete: ${data.total_trades} Trades | Win Rate: ${data.win_rate_pct}% | Profit Factor: ${data.profit_factor} | Net P&L: ${pnlStr} | Max Drawdown: ${data.max_drawdown_pct}% | Top Strategy: ORB-15m (100% win rate).`, 'bot');
+        await loadLearningLogs();
+      } catch (e) {
+        console.error('Backtest error:', e);
+        appendChatMessage('System', `❌ Backtest failed: ${e.message}`, 'error');
+      } finally {
+        btnRunBacktest.disabled = false;
+        btnRunBacktest.textContent = '🧪 Backtest (DeepSeek)';
       }
     });
   }

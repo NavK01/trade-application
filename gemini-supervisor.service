@@ -1,0 +1,26 @@
+[Unit]
+Description=Antigravity Autonomous Quant Supervisor & Self-Healing Bot
+After=network.target gemini-agent.service
+Wants=gemini-agent.service
+
+[Service]
+Type=simple
+User=crimson
+WorkingDirectory=/home/crimson/GeminiAgent
+Environment="PATH=/home/crimson/GeminiAgent/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/home/crimson/GeminiAgent"
+ExecStart=/home/crimson/GeminiAgent/venv/bin/python3 -u app/system/autonomous_quant_supervisor.py
+Restart=always
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gemini-supervisor
+
+# Resource Limits on 16 GB RAM Azure VM
+MemoryMax=3.5G
+MemoryHigh=3.0G
+CPUQuota=150%
+
+[Install]
+WantedBy=multi-user.target
+

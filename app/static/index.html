@@ -47,6 +47,7 @@
         </div>
         <button id="btn-trigger-arena-cycle" class="btn btn-small btn-primary" title="Trigger both Gemini & DeepSeek AI models on scanned stock">⚔️ Run Arena Cycle</button>
         <button id="btn-pre-market-scan" class="btn btn-small btn-accent" title="Run Pre-Market Google Search analysis for budget stocks">🌅 Pre-Market</button>
+        <button id="btn-run-backtest" class="btn btn-small btn-secondary" title="Run Intraday Backtest on past 5-min data with DeepSeek Flash MaaS">🧪 Backtest (DeepSeek)</button>
         <button id="btn-reset-account" class="btn btn-small btn-secondary" title="Reset both testing dummy accounts to ₹10,000 each">🔄 Reset ₹10K</button>
         <button id="btn-show-instructions" class="btn btn-small btn-secondary">📖 Guide</button>
         <div class="user-auth-pill" id="user-auth-pill" style="display: none;">
@@ -64,8 +65,8 @@
         <div class="arena-card-header">
           <div class="agent-tag gemini-tag">
             <span class="agent-dot dot-gemini"></span>
-            <strong>GEMINI 3.8 FLASH</strong>
-            <span class="model-id-badge">Vertex AI (super-512620)</span>
+            <strong id="gemini-agent-title">CLAUDE OPUS 4.6 / GEMINI</strong>
+            <span id="gemini-model-badge" class="model-id-badge">Antigravity Pro Benchmark</span>
           </div>
           <div class="agent-metrics">
             <span>Cash: <strong id="gemini-cash">₹ 10,000.00</strong></span>
@@ -115,8 +116,8 @@
         <div class="arena-card-header">
           <div class="agent-tag deepseek-tag">
             <span class="agent-dot dot-deepseek"></span>
-            <strong>DEEPSEEK FLASH MAAS</strong>
-            <span class="model-id-badge">Vertex Global MaaS</span>
+            <strong id="deepseek-agent-title">DEEPSEEK FLASH MAAS</strong>
+            <span id="deepseek-model-badge" class="model-id-badge">Live Execution &amp; Massive Context</span>
           </div>
           <div class="agent-metrics">
             <span>Cash: <strong id="deepseek-cash">₹ 10,000.00</strong></span>

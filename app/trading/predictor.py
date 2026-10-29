@@ -275,7 +275,7 @@ class ArgonPredictor:
                 "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"
             })
             df_ind = intraday_engine.compute_technical_indicators(df_clean)
-            for _, r in df_ind.tail(350).iterrows():
+            for _, r in df_ind.tail(250).iterrows():
                 bars_series.append({
                     "time": str(r.get("timestamp", ""))[:16],
                     "o": round(float(r.get("open", 0)), 2),
@@ -404,7 +404,7 @@ class ArgonPredictor:
                     contents=prompt_text,
                     config=config,
                 ),
-                timeout=35.0,
+                timeout=40.0,
             )
 
             text_resp = ""
@@ -484,7 +484,7 @@ class ArgonPredictor:
                     contents=prompt_text,
                     config=config,
                 ),
-                timeout=35.0,
+                timeout=40.0,
             )
 
             text_resp = response.text.strip() if response.text else ""
@@ -576,7 +576,7 @@ class ArgonPredictor:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=50.0)
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=55.0)
                 out_text = stdout.decode("utf-8").strip() if stdout else ""
                 if proc.returncode == 0 and out_text:
                     m = re.search(r"\{.*\}", out_text, re.DOTALL)
@@ -706,11 +706,11 @@ class ArgonPredictor:
         try:
             results = await asyncio.wait_for(
                 asyncio.gather(task_deepseek, task_gemini, return_exceptions=True),
-                timeout=65.0
+                timeout=110.0
             )
             res_deepseek, res_gemini = results[0], results[1]
         except asyncio.TimeoutError:
-            logger.error(f"Arena parallel queries for {sym} timed out after 65s. Utilizing fallback setups.")
+            logger.error(f"Arena parallel queries for {sym} timed out after 110s. Utilizing fallback setups.")
             res_deepseek = self._generate_algorithmic_fallback(sym, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
             res_gemini = self._generate_algorithmic_fallback(sym, "gemini_flash", "Gemini 3.8 Flash (Fallback)", orb_plan, sim_odds)
 

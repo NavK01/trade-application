@@ -378,10 +378,12 @@ class ArgonPredictor:
         Primary Live Trading Prediction Engine powered by DeepSeek Flash MaaS (Vertex AI).
         Ingests the massive multi-timeframe market context (~50,000+ tokens) and outputs
         compact, verified intraday trade recommendations for live execution.
+        Falls back to Claude Opus 4.6 Thinking (Antigravity Pro) if quota, network, or timeout occurs.
         """
         api_key = settings.GEMINI_API_KEY
-        if not api_key or api_key.startswith("your_"):
-            return self._generate_algorithmic_fallback(symbol, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
+        if not api_key or api_key.startswith("your_") or not token_tracker.can_consume_tokens(estimated_prompt_tokens=35000, estimated_completion_tokens=300):
+            logger.info(f"DeepSeek token cap reached or unconfigured. Shifting to Claude Opus Thinking fallback for {symbol}...")
+            return await self._query_opus_antigravity_prediction(symbol, massive_context, orb_plan, sim_odds, account_id="deepseek_flash")
 
         client = create_genai_client(api_key, location="global")
         model_id = "deepseek-ai/deepseek-v4.1-flash-maas"
@@ -414,15 +416,15 @@ class ArgonPredictor:
                 text_resp = "\n".join(text_parts).strip()
 
             if not text_resp:
-                logger.warning(f"DeepSeek Flash returned empty response for {symbol}. Falling back.")
-                return self._generate_algorithmic_fallback(symbol, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
+                logger.warning(f"DeepSeek Flash returned empty response for {symbol}. Triggering Claude Opus fallback...")
+                return await self._query_opus_antigravity_prediction(symbol, massive_context, orb_plan, sim_odds, account_id="deepseek_flash")
 
             m = re.search(r"\{.*\}", text_resp, re.DOTALL)
             clean_text = m.group(0) if m else text_resp
 
             pred_data = json.loads(clean_text)
             pred_data["account_id"] = "deepseek_flash"
-            pred_data["model"] = "DeepSeek Flash MaaS (Massive Context)"
+            pred_data["model"] = "DeepSeek Flash MaaS"
             pred_data["timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
             pred_data["timeframe"] = pred_data.get("timeframe", "5-15 Min Scalp")
 
@@ -436,10 +438,14 @@ class ArgonPredictor:
             return pred_data
 
         except Exception as e:
-            logger.error(f"DeepSeek Flash MaaS query error for {symbol}: {e}")
-            return self._generate_algorithmic_fallback(symbol, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
+            logger.error(f"DeepSeek Flash MaaS query error for {symbol}: {e}. Triggering Claude Opus Antigravity fallback...")
+            try:
+                return await self._query_opus_antigravity_prediction(symbol, massive_context, orb_plan, sim_odds, account_id="deepseek_flash")
+            except Exception as opus_err:
+                logger.error(f"Claude Opus fallback failed: {opus_err}. Using algorithmic fallback.")
+                return self._generate_algorithmic_fallback(symbol, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
 
-    async def _query_opus_antigravity_prediction(
+    async def _query_gemini_prediction(
         self,
         symbol: str,
         massive_context: Dict[str, Any],
@@ -447,13 +453,87 @@ class ArgonPredictor:
         sim_odds: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        Side-by-side Comparative Benchmark using Claude Opus 4.6 Thinking via Antigravity Pro credentials.
+        Dual Arena Agent A Prediction Engine: Gemini 3.8 Flash (Vertex AI / Google GenAI).
+        Ingests the massive multi-timeframe market context and evaluates intraday opportunities.
+        Falls back to Claude Opus 4.6 Thinking (Antigravity Pro) if quota, network, or timeout occurs.
+        """
+        api_key = settings.GEMINI_API_KEY
+        if not api_key or api_key.startswith("your_") or not token_tracker.can_consume_tokens(estimated_prompt_tokens=25000, estimated_completion_tokens=300):
+            logger.info(f"Gemini token cap reached or unconfigured. Shifting to Claude Opus Thinking fallback for {symbol}...")
+            return await self._query_opus_antigravity_prediction(symbol, massive_context, orb_plan, sim_odds, account_id="gemini_flash")
+
+        client = create_genai_client(api_key)
+        model_id = settings.GEMINI_AGENT_MODEL or "gemini-2.5-flash"
+
+        prompt_text = (
+            f"{PREDICTOR_SYSTEM_PROMPT}\n\n"
+            f"=== FULL MARKET CONTEXT & MULTI-TIMEFRAME DATA (Symbol: {symbol}) ===\n"
+            f"{json.dumps(massive_context)}\n\n"
+            f"Analyze candle series, Camarilla levels, indicators, and empirical axioms. "
+            f"Produce your final intraday trading recommendation. Return strictly a raw JSON object."
+        )
+
+        try:
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2,
+            )
+            response = await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=model_id,
+                    contents=prompt_text,
+                    config=config,
+                ),
+                timeout=35.0,
+            )
+
+            text_resp = response.text.strip() if response.text else ""
+            if not text_resp:
+                logger.warning(f"Gemini 3.8 Flash returned empty response for {symbol}. Triggering Claude Opus fallback...")
+                return await self._query_opus_antigravity_prediction(symbol, massive_context, orb_plan, sim_odds, account_id="gemini_flash")
+
+            m = re.search(r"\{.*\}", text_resp, re.DOTALL)
+            clean_text = m.group(0) if m else text_resp
+
+            pred_data = json.loads(clean_text)
+            pred_data["account_id"] = "gemini_flash"
+            pred_data["model"] = "Gemini 3.8 Flash"
+            pred_data["timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            pred_data["timeframe"] = pred_data.get("timeframe", "5-15 Min Scalp")
+
+            p_toks = getattr(response.usage_metadata, "prompt_token_count", 25000) if hasattr(response, "usage_metadata") else 25000
+            c_toks = getattr(response.usage_metadata, "candidates_token_count", 250) if hasattr(response, "usage_metadata") else 250
+            token_tracker.log_usage("predictor_gemini_flash", model_id, p_toks, c_toks)
+            pred_data["tokens_used"] = p_toks + c_toks
+
+            db.record_prediction(pred_data)
+            logger.info(f"✨ Gemini 3.8 Flash prediction generated for {symbol}: {pred_data.get('signal')} ({pred_data.get('confidence_pct')}%) [{p_toks} prompt tokens consumed]")
+            return pred_data
+
+        except Exception as e:
+            logger.error(f"Gemini 3.8 Flash query error for {symbol}: {e}. Triggering Claude Opus Antigravity fallback...")
+            try:
+                return await self._query_opus_antigravity_prediction(symbol, massive_context, orb_plan, sim_odds, account_id="gemini_flash")
+            except Exception as opus_err:
+                logger.error(f"Claude Opus fallback failed: {opus_err}. Using algorithmic fallback.")
+                return self._generate_algorithmic_fallback(symbol, "gemini_flash", "Gemini 3.8 Flash (Fallback)", orb_plan, sim_odds)
+
+    async def _query_opus_antigravity_prediction(
+        self,
+        symbol: str,
+        massive_context: Dict[str, Any],
+        orb_plan: Dict[str, Any],
+        sim_odds: Dict[str, Any],
+        account_id: str = "gemini_flash",
+    ) -> Dict[str, Any]:
+        """
+        Institutional Benchmark & High-Reliability Fallback using Claude Opus 4.6 Thinking via Antigravity Pro credentials.
         Consumes $0.00 / ₹0.00 Google Cloud API tokens.
-        Allows the user to evaluate Claude Opus vs DeepSeek Flash on the exact same market data.
         """
         agy_bin = shutil.which("agy") or "/usr/local/bin/agy"
+        fallback_model_name = "Claude Opus 4.6 Thinking (Antigravity Fallback)" if account_id == "deepseek_flash" else "Claude Opus 4.6 Thinking (Antigravity)"
         if not os.path.exists(agy_bin):
-            return self._generate_algorithmic_fallback(symbol, "gemini_flash", "Claude Opus (Unavailable - Fallback)", orb_plan, sim_odds)
+            return self._generate_algorithmic_fallback(symbol, account_id, f"{fallback_model_name} (Unavailable)", orb_plan, sim_odds)
 
         # Condensed high-density setup summary tailored for the CLI prompt
         bars_snippet = massive_context.get("historical_5m_bars_with_indicators", [])[-25:]
@@ -502,13 +582,16 @@ class ArgonPredictor:
                     m = re.search(r"\{.*\}", out_text, re.DOTALL)
                     if m:
                         pred_data = json.loads(m.group(0))
-                        pred_data["account_id"] = "gemini_flash"
-                        pred_data["model"] = f"Claude Opus 4.6 Thinking (Antigravity)" if "opus" in model_cand else f"Antigravity ({model_cand})"
+                        pred_data["account_id"] = account_id
+                        model_label = "Claude Opus 4.6 Thinking (Antigravity)" if "opus" in model_cand else f"Antigravity ({model_cand})"
+                        if account_id == "deepseek_flash":
+                            model_label = f"DeepSeek (Opus Fallback)"
+                        pred_data["model"] = model_label
                         pred_data["timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
                         pred_data["timeframe"] = pred_data.get("timeframe", "5-15 Min Scalp")
                         pred_data["tokens_used"] = 0  # 0 cloud billing tokens!
                         db.record_prediction(pred_data)
-                        logger.info(f"🏛️ Antigravity Pro benchmark prediction generated via {model_cand} for {symbol} (0 cloud credits consumed).")
+                        logger.info(f"🏛️ Antigravity Pro [{account_id}] prediction generated via {model_cand} for {symbol} (0 cloud credits consumed).")
                         return pred_data
                 err_text = stderr.decode("utf-8") if stderr else ""
                 if "quota" in err_text.lower() or "rate" in err_text.lower() or "limit" in err_text.lower():
@@ -517,7 +600,7 @@ class ArgonPredictor:
                 logger.warning(f"Antigravity query exception on {model_cand}: {e}. Retrying next model...")
                 continue
 
-        return self._generate_algorithmic_fallback(symbol, "gemini_flash", "Claude Opus (Fallback)", orb_plan, sim_odds)
+        return self._generate_algorithmic_fallback(symbol, account_id, f"{fallback_model_name} (Fallback)", orb_plan, sim_odds)
 
     async def run_arena_cycle(self, target_symbol: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -606,14 +689,14 @@ class ArgonPredictor:
         )
 
         # Dispatch both models in parallel:
-        # DeepSeek Flash MaaS (live trading engine) vs Claude Opus 4.6 (benchmark)
+        # Agent A (Gemini 3.8 Flash, with Claude Opus fallback) vs Agent B (DeepSeek Flash MaaS, with Claude Opus fallback)
         task_deepseek = self._query_deepseek_prediction(
             symbol=sym,
             massive_context=massive_context,
             orb_plan=orb_plan,
             sim_odds=sim_odds,
         )
-        task_opus = self._query_opus_antigravity_prediction(
+        task_gemini = self._query_gemini_prediction(
             symbol=sym,
             massive_context=massive_context,
             orb_plan=orb_plan,
@@ -622,20 +705,20 @@ class ArgonPredictor:
 
         try:
             results = await asyncio.wait_for(
-                asyncio.gather(task_deepseek, task_opus, return_exceptions=True),
+                asyncio.gather(task_deepseek, task_gemini, return_exceptions=True),
                 timeout=65.0
             )
-            res_deepseek, res_opus = results[0], results[1]
+            res_deepseek, res_gemini = results[0], results[1]
         except asyncio.TimeoutError:
             logger.error(f"Arena parallel queries for {sym} timed out after 65s. Utilizing fallback setups.")
             res_deepseek = self._generate_algorithmic_fallback(sym, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
-            res_opus = self._generate_algorithmic_fallback(sym, "gemini_flash", "Claude Opus (Fallback)", orb_plan, sim_odds)
+            res_gemini = self._generate_algorithmic_fallback(sym, "gemini_flash", "Gemini 3.8 Flash (Fallback)", orb_plan, sim_odds)
 
         pred_deepseek = res_deepseek if not isinstance(res_deepseek, Exception) else self._generate_algorithmic_fallback(sym, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
-        pred_opus = res_opus if not isinstance(res_opus, Exception) else self._generate_algorithmic_fallback(sym, "gemini_flash", "Claude Opus (Fallback)", orb_plan, sim_odds)
+        pred_gemini = res_gemini if not isinstance(res_gemini, Exception) else self._generate_algorithmic_fallback(sym, "gemini_flash", "Gemini 3.8 Flash (Fallback)", orb_plan, sim_odds)
 
         self.deepseek_last_prediction = pred_deepseek
-        self.gemini_last_prediction = pred_opus
+        self.gemini_last_prediction = pred_gemini
         self.last_prediction = pred_deepseek  # DeepSeek Flash is the primary live trading reference
 
         # Auto-Execution: Exclusively driven by DeepSeek Flash for live trading orders
@@ -648,7 +731,7 @@ class ArgonPredictor:
             "type": "arena_update",
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "symbol": sym,
-            "gemini_prediction": pred_opus,
+            "gemini_prediction": pred_gemini,
             "deepseek_prediction": pred_deepseek,
             "arena": arena_summary,
             "next_run_timestamp": self.next_run_timestamp,

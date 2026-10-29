@@ -866,7 +866,12 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const res = await fetch('/api/tokens/summary');
       const data = await res.json();
-      if (tokensCount) tokensCount.textContent = `${(data.today_tokens_used || 0).toLocaleString()} / 100K`;
+      const maxToks = data.max_daily_tokens || 10500000;
+      const maxStr = maxToks >= 1000000 ? `${(maxToks / 1000000).toFixed(1)}M` : `${Math.round(maxToks / 1000)}K`;
+      if (tokensCount) {
+        tokensCount.textContent = `${(data.today_tokens_used || 0).toLocaleString()} / ${maxStr}`;
+        tokensCount.title = `Input: ${(data.today_prompt_tokens || 0).toLocaleString()} / 10M | Output: ${(data.today_completion_tokens || 0).toLocaleString()} / 500K`;
+      }
       if (tokensCost) tokensCost.textContent = `₹ ${(data.estimated_ai_cost_inr || 0).toFixed(2)}`;
       if (tokensTradingPnl) tokensTradingPnl.textContent = `₹ ${(data.realized_trading_pnl_inr || 0).toFixed(2)}`;
     } catch(e){}

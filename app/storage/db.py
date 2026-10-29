@@ -675,6 +675,27 @@ class DatabaseManager:
             row = cursor.fetchone()
             return int(row["total"]) if row else 0
 
+    def get_today_token_breakdown(self) -> Dict[str, int]:
+        today_prefix = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
+                    COALESCE(SUM(completion_tokens), 0) as completion_tokens,
+                    COALESCE(SUM(total_tokens), 0) as total_tokens
+                FROM token_usage 
+                WHERE timestamp LIKE ?
+            """, (f"{today_prefix}%",))
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "prompt_tokens": int(row["prompt_tokens"]),
+                    "completion_tokens": int(row["completion_tokens"]),
+                    "total_tokens": int(row["total_tokens"]),
+                }
+            return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
     def get_token_summary(self) -> Dict[str, Any]:
         with self._get_connection() as conn:
             cursor = conn.cursor()

@@ -77,7 +77,7 @@ class AutonomousQuantSupervisor:
     def commit_changes(self, message: str) -> bool:
         """Records all verified code modifications cleanly into Git."""
         try:
-            subprocess.run(["git", "add", "app/", "trading_workspace/", "tests/"], cwd=BASE_DIR, check=True, timeout=10)
+            subprocess.run(["git", "add", "app/trading/intraday_strategies.py", "trading_workspace/"], cwd=BASE_DIR, check=True, timeout=10)
             subprocess.run(["git", "commit", "-m", message], cwd=BASE_DIR, check=True, timeout=10)
             logger.info(f"📌 Git commit recorded: '{message}'")
             return True
@@ -86,10 +86,10 @@ class AutonomousQuantSupervisor:
             return False
 
     def revert_unverified_changes(self):
-        """Discards unverified changes to prevent corrupting live code."""
+        """Discards unverified changes strictly in intraday_strategies to prevent corrupting core application code."""
         try:
-            subprocess.run(["git", "checkout", "--", "app/"], cwd=BASE_DIR, check=True, timeout=10)
-            logger.warning("⚠️ Reverted unverified modifications in app/ directory.")
+            subprocess.run(["git", "checkout", "--", "app/trading/intraday_strategies.py"], cwd=BASE_DIR, check=True, timeout=10)
+            logger.warning("⚠️ Reverted unverified modifications in app/trading/intraday_strategies.py.")
         except Exception as e:
             logger.error(f"Failed to revert changes: {e}")
 

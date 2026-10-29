@@ -1,0 +1,132 @@
+{
+  "initial_capital_inr": 10000.0,
+  "ending_capital_inr": 10091.17,
+  "net_pnl_inr": 91.17,
+  "net_return_pct": 0.91,
+  "total_trades": 8,
+  "winning_trades": 8,
+  "losing_trades": 0,
+  "win_rate_pct": 100.0,
+  "profit_factor": 99.0,
+  "max_drawdown_pct": 0.0,
+  "deepseek_queries_count": 0,
+  "time_filter_applied": false,
+  "strategy_breakdown": {
+    "VWAP Institutional Bounce": {
+      "trades": 3,
+      "wins": 3,
+      "pnl": 29.78,
+      "win_rate_pct": 100.0
+    },
+    "Bollinger Bands Lower Band Reversal": {
+      "trades": 2,
+      "wins": 2,
+      "pnl": 30.78,
+      "win_rate_pct": 100.0
+    },
+    "Opening Range Breakout (ORB-15m)": {
+      "trades": 3,
+      "wins": 3,
+      "pnl": 30.61,
+      "win_rate_pct": 100.0
+    }
+  },
+  "trades": [
+    {
+      "symbol": "TCS",
+      "strategy": "VWAP Institutional Bounce",
+      "action": "BUY",
+      "entry_time": "13:20",
+      "entry_price": 2493.0,
+      "exit_time": "14:35",
+      "exit_price": 2503.99,
+      "net_pnl": 9.49,
+      "exit_reason": "TARGET_HIT",
+      "won": true
+    },
+    {
+      "symbol": "TCS",
+      "strategy": "Bollinger Bands Lower Band Reversal",
+      "action": "BUY",
+      "entry_time": "14:40",
+      "entry_price": 2448.5,
+      "exit_time": "15:25",
+      "exit_price": 2458.78,
+      "net_pnl": 8.81,
+      "exit_reason": "TARGET_HIT",
+      "won": true
+    },
+    {
+      "symbol": "VEDL",
+      "strategy": "Bollinger Bands Lower Band Reversal",
+      "action": "BUY",
+      "entry_time": "14:20",
+      "entry_price": 231.0,
+      "exit_time": "15:00",
+      "exit_price": 232.97,
+      "net_pnl": 21.97,
+      "exit_reason": "TARGET_HIT",
+      "won": true
+    },
+    {
+      "symbol": "SBIN",
+      "strategy": "Opening Range Breakout (ORB-15m)",
+      "action": "BUY",
+      "entry_time": "10:10",
+      "entry_price": 961.85,
+      "exit_time": "10:30",
+      "exit_price": 966.81,
+      "net_pnl": 13.14,
+      "exit_reason": "TARGET_HIT",
+      "won": true
+    },
+    {
+      "symbol": "SBIN",
+      "strategy": "VWAP Institutional Bounce",
+      "action": "BUY",
+      "entry_time": "13:50",
+      "entry_price": 966.0,
+      "exit_time": "15:25",
+      "exit_price": 970.0,
+      "net_pnl": 10.26,
+      "exit_reason": "EOD_SQUARE_OFF",
+      "won": true
+    },
+    {
+      "symbol": "SBIN",
+      "strategy": "Opening Range Breakout (ORB-15m)",
+      "action": "BUY",
+      "entry_time": "13:50",
+      "entry_price": 958.05,
+      "exit_time": "15:25",
+      "exit_price": 960.8,
+      "net_pnl": 6.52,
+      "exit_reason": "EOD_SQUARE_OFF",
+      "won": true
+    },
+    {
+      "symbol": "ICICIBANK",
+      "strategy": "Opening Range Breakout (ORB-15m)",
+      "action": "BUY",
+      "entry_time": "10:20",
+      "entry_price": 1390.0,
+      "exit_time": "10:30",
+      "exit_price": 1396.31,
+      "net_pnl": 10.95,
+      "exit_reason": "TARGET_HIT",
+      "won": true
+    },
+    {
+      "symbol": "ICICIBANK",
+      "strategy": "VWAP Institutional Bounce",
+      "action": "BUY",
+      "entry_time": "13:40",
+      "entry_price": 1392.7,
+      "exit_time": "14:35",
+      "exit_price": 1398.55,
+      "net_pnl": 10.03,
+      "exit_reason": "TARGET_HIT",
+      "won": true
+    }
+  ]
+}

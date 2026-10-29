@@ -180,29 +180,29 @@ class IntradayStrategySuite:
         bb_upper = float(current.get("bb_upper", cur_close * 1.02))
 
         candle_rng = cur_high - cur_low
-        bullish_bar = cur_close >= cur_open and ((cur_close - cur_low) >= (candle_rng * 0.64) if candle_rng > 0 else True)
-        not_chasing = cur_close <= (or_high * 1.009)
-        not_overbought = (cur_close < bb_upper * 0.999) and (cur_close < vwap_u2 * 0.999)
+        bullish_bar = cur_close >= cur_open and ((cur_close - cur_low) >= (candle_rng * 0.52) if candle_rng > 0 else True)
+        not_chasing = cur_close <= (or_high * 1.010)
+        not_overbought = cur_close < (bb_upper * 1.002)
         min_gain_est = cur_close * 0.0035
-        headroom_ok = (vwap_u2 >= cur_close + min_gain_est) and (bb_upper >= cur_close + min_gain_est)
-        breakout_margin_ok = cur_close >= (or_high * 1.0015)
-        range_meaningful = (or_high - or_low) >= (cur_close * 0.0025)
-        range_not_exhausted = (or_high - or_low) <= (cur_close * 0.022)
-        trend_ok = (ema_9 >= ema_20) and (st_dir == 1) and (cur_close >= ema_50)
+        headroom_ok = (bb_upper >= cur_close * 0.999) if len(df) <= 12 else (bb_upper >= cur_close + min_gain_est * 0.5)
+        breakout_margin_ok = cur_close >= (or_high * 1.0005)
+        range_meaningful = (or_high - or_low) >= (cur_close * 0.0020)
+        range_not_exhausted = (or_high - or_low) <= (cur_close * 0.025)
+        trend_ok = (ema_9 >= ema_20 * 0.998) and (st_dir == 1) and (cur_close >= ema_50 * 0.998)
 
         # Time-of-day regime gates: avoid midday lull and late-session EOD decay
         time_str = str(current.get("timestamp", ""))
         time_part = time_str[11:16] if len(time_str) >= 16 else ""
         if time_part and ("11:15" <= time_part <= "13:15"):
             return {"active": False, "signal": "HOLD", "reason": "ORB blocked during midday lull (11:15-13:15 IST)"}
-        if time_part and time_part >= "14:15":
-            return {"active": False, "signal": "HOLD", "reason": "ORB blocked after 14:15 IST (insufficient time before 15:20 EOD square-off)"}
+        if time_part and time_part > "13:30":
+            return {"active": False, "signal": "HOLD", "reason": "ORB blocked after 13:30 IST (insufficient morning momentum runway)"}
 
         # Check for initial breakout of the session (prevents choppy re-cross traps)
         if len(df) > or_bars_count + 1:
             prior_closes = df.iloc[or_bars_count:-1]["close"]
             had_prior_breakout = bool((prior_closes > or_high).any())
-            had_prior_breakdown = bool((prior_closes < or_low).any())
+            had_prior_breakdown = bool((prior_closes < or_low * 0.998).any())
         else:
             had_prior_breakout = False
             had_prior_breakdown = False
@@ -211,15 +211,15 @@ class IntradayStrategySuite:
         vol_req = (vol_sma * 1.25) if (time_part and time_part > "13:15" and vol_sma > 0) else (vol_sma * 1.15)
         vol_confirmed_orb = vol >= vol_req if vol_sma > 0 else True
 
-        # Bullish Breakout: green candle with upper close, above VWAP, volume confirmed, healthy RSI (48-68.0), not chasing, initial breakout
-        if cur_close > or_high and breakout_margin_ok and prev["close"] <= or_high and not had_prior_breakout and not had_prior_breakdown and vol_confirmed_orb and bullish_bar and cur_close >= vwap and (48.0 <= rsi <= 68.0) and not_chasing and not_overbought and trend_ok and range_meaningful and range_not_exhausted and headroom_ok:
+        # Bullish Breakout: green candle with upper close, above VWAP, volume confirmed, healthy RSI (46-72.0), not chasing, initial breakout
+        if cur_close > or_high and breakout_margin_ok and prev["close"] <= or_high and not had_prior_breakout and not had_prior_breakdown and vol_confirmed_orb and bullish_bar and cur_close >= vwap and (46.0 <= rsi <= 72.0) and not_chasing and not_overbought and trend_ok and range_meaningful and range_not_exhausted and headroom_ok:
             atr = float(current.get("atr_14", cur_close * 0.005))
-            stop = round(max(or_mid, cur_close - (atr * 1.30)), 2)
+            stop = round(max(or_mid, cur_close - (atr * 1.15)), 2)
             stop = min(stop, round(cur_close - max(cur_close * 0.0035, atr * 0.35), 2))
-            stop = max(stop, round(cur_close - max(atr * 0.70, cur_close * 0.0040), 2))
+            stop = max(stop, round(cur_close - max(atr * 0.95, cur_close * 0.0070), 2))
             risk = max(cur_close - stop, cur_close * 0.003)
-            min_gain = max(risk * 1.15, cur_close * 0.0035)
-            tp2 = round(min(cur_close + (risk * 1.35), max(cur_close + (risk * 1.22), bb_upper * 0.999)), 2)
+            min_gain = max(risk * 1.18, cur_close * 0.0035)
+            tp2 = round(min(cur_close + (risk * 1.38), max(cur_close + (risk * 1.25), bb_upper * 1.001)), 2)
             tp1 = round(max(cur_close + min_gain, min(cur_close + (risk * 1.18), tp2 - (risk * 0.08))), 2)
             tp1 = min(tp1, round(tp2 - (risk * 0.08), 2))
             tp1 = round(max(tp1, cur_close + cur_close * 0.0035), 2)
@@ -241,28 +241,28 @@ class IntradayStrategySuite:
                 "stop_loss": stop,
                 "target_1": tp1,
                 "target_2": tp2,
-                "risk_reward_ratio": "1:1.15 (Primary Target 1) / 1:1.35 (Momentum Ceiling Target 2)",
+                "risk_reward_ratio": "1:1.18 (Primary Target 1) / 1:1.38 (Momentum Ceiling Target 2)",
                 "confidence": 92,
                 "rationale": f"High-conviction ORB-15m breakout: 5m close ₹{cur_close:.2f} broke above 15m OR High ₹{or_high:.2f} with institutional volume ({vol:.0f} >= {vol_req:.0f}) and VWAP confirmation. Disciplined stop loss anchored at ₹{stop:.2f} with primary take-profit Target 1 at ₹{tp1:.2f} (momentum ceiling ₹{tp2:.2f}).",
             }
 
         bb_lower = float(current.get("bb_lower", cur_close * 0.98))
-        bearish_bar = cur_close <= cur_open and ((cur_high - cur_close) >= (candle_rng * 0.64) if candle_rng > 0 else True)
-        not_chasing_short = cur_close >= (or_low * 0.991)
-        not_oversold_short = (cur_close > bb_lower * 1.001) and (cur_close > vwap_l2 * 1.001)
-        breakdown_margin_ok = cur_close <= (or_low * 0.9985)
-        trend_ok_short = (ema_9 <= ema_20) and (st_dir == -1) and (cur_close <= ema_50)
-        headroom_ok_short = (vwap_l2 <= cur_close - min_gain_est) and (bb_lower <= cur_close - min_gain_est)
+        bearish_bar = cur_close <= cur_open and ((cur_high - cur_close) >= (candle_rng * 0.52) if candle_rng > 0 else True)
+        not_chasing_short = cur_close >= (or_low * 0.990)
+        not_oversold_short = cur_close > (bb_lower * 0.998)
+        breakdown_margin_ok = cur_close <= (or_low * 0.9995)
+        trend_ok_short = (ema_9 <= ema_20 * 1.002) and (st_dir == -1) and (cur_close <= ema_50 * 1.002)
+        headroom_ok_short = (bb_lower <= cur_close * 1.001) if len(df) <= 12 else (bb_lower <= cur_close - min_gain_est * 0.5)
 
         # Bearish Breakdown: red candle, below VWAP, volume confirmed, healthy RSI, initial breakdown
-        if cur_close < or_low and breakdown_margin_ok and prev["close"] >= or_low and not had_prior_breakdown and not had_prior_breakout and vol_confirmed_orb and bearish_bar and cur_close <= vwap and (31.5 <= rsi <= 52.0) and not_chasing_short and not_oversold_short and trend_ok_short and range_meaningful and range_not_exhausted and headroom_ok_short:
+        if cur_close < or_low and breakdown_margin_ok and prev["close"] >= or_low and not had_prior_breakdown and not had_prior_breakout and vol_confirmed_orb and bearish_bar and cur_close <= vwap and (30.0 <= rsi <= 54.0) and not_chasing_short and not_oversold_short and trend_ok_short and range_meaningful and range_not_exhausted and headroom_ok_short:
             atr = float(current.get("atr_14", cur_close * 0.005))
-            stop = round(min(or_mid, cur_close + (atr * 1.30)), 2)
+            stop = round(min(or_mid, cur_close + (atr * 1.15)), 2)
             stop = max(stop, round(cur_close + max(cur_close * 0.0035, atr * 0.35), 2))
-            stop = min(stop, round(cur_close + max(atr * 0.70, cur_close * 0.0040), 2))
+            stop = min(stop, round(cur_close + max(atr * 0.95, cur_close * 0.0070), 2))
             risk = max(stop - cur_close, cur_close * 0.003)
-            min_gain = max(risk * 1.15, cur_close * 0.0035)
-            tp2 = round(max(cur_close - (risk * 1.35), min(cur_close - (risk * 1.22), bb_lower * 1.001)), 2)
+            min_gain = max(risk * 1.18, cur_close * 0.0035)
+            tp2 = round(max(cur_close - (risk * 1.38), min(cur_close - (risk * 1.25), bb_lower * 0.999)), 2)
             tp1 = round(min(cur_close - min_gain, max(cur_close - (risk * 1.18), tp2 + (risk * 0.08))), 2)
             tp1 = max(tp1, round(tp2 + (risk * 0.08), 2))
             tp1 = round(min(tp1, cur_close - cur_close * 0.0035), 2)
@@ -284,8 +284,8 @@ class IntradayStrategySuite:
                 "stop_loss": stop,
                 "target_1": tp1,
                 "target_2": tp2,
-                "risk_reward_ratio": "1:1.15 (Primary Target 1) / 1:1.35 (Momentum Ceiling Target 2)",
-                "confidence": 82,
+                "risk_reward_ratio": "1:1.18 (Primary Target 1) / 1:1.38 (Momentum Ceiling Target 2)",
+                "confidence": 84,
                 "rationale": f"5m close ₹{cur_close:.2f} broke below 15m OR Low ₹{or_low:.2f} with volume & VWAP confirmation. Primary take-profit Target 1 is ₹{tp1:.2f} (momentum ceiling ₹{tp2:.2f}).",
             }
 
@@ -318,8 +318,12 @@ class IntradayStrategySuite:
             return {"active": False, "signal": "HOLD", "reason": "VWAP bounce blocked during opening price discovery (< 09:30 IST)"}
         if time_part and ("11:15" <= time_part <= "13:15"):
             return {"active": False, "signal": "HOLD", "reason": "VWAP bounce blocked during midday lull (11:15-13:15 IST)"}
-        if time_part and time_part >= "14:15":
-            return {"active": False, "signal": "HOLD", "reason": "VWAP bounce blocked after 14:15 IST (insufficient time before 15:20 EOD square-off)"}
+        if time_part and time_part > "13:40":
+            return {"active": False, "signal": "HOLD", "reason": "VWAP bounce blocked after 13:40 IST (insufficient runway before 15:20 EOD square-off)"}
+
+        # Dynamic Volume Confirmation: 1.10x SMA20 morning, 1.15x afternoon (> 13:15 IST)
+        vol_req = (vol_sma * 1.15) if (time_part and time_part > "13:15" and vol_sma > 0) else (vol_sma * 1.10)
+        vol_ok = vol >= vol_req if vol_sma > 0 else True
 
         # VWAP Bullish Bounce (Touched VWAP and closed green above it with volume & trend alignment)
         st_dir = int(current.get("supertrend_dir", 1))
@@ -327,32 +331,31 @@ class IntradayStrategySuite:
         ema_20 = float(current.get("ema_20", cur_close))
         ema_50 = float(current.get("ema_50", cur_close))
         rsi = float(current.get("rsi_14", 50.0))
-        vwap_u1 = float(current.get("vwap_upper_1", vwap * 1.004))
         vwap_u2 = float(current.get("vwap_upper_2", cur_close * 1.02))
         bb_upper = float(current.get("bb_upper", cur_close * 1.01))
         cur_open = float(current["open"])
         cur_high = float(current["high"])
         candle_rng = cur_high - cur_low
-        close_quality = (cur_close - cur_low) >= (candle_rng * 0.64) if candle_rng > 0 else True
+        close_quality = (cur_close - cur_low) >= (candle_rng * 0.52) if candle_rng > 0 else True
 
-        # Quadruple filter: SuperTrend bullish, EMA9 >= EMA20, EMA20 >= EMA50 (strict bullish alignment), Close >= EMA50, healthy RSI, 20-EMA reclaim
-        trend_aligned = (st_dir == 1) and (ema_9 >= ema_20) and (ema_20 >= ema_50) and (cur_close >= ema_50) and (45.0 <= rsi <= 68.0) and (cur_close >= ema_20 * 0.998)
-        # Extension & Proximity Gate: prevent entering when already stretched to +1σ VWAP or +2σ Upper Bollinger ceiling
-        not_extended = (cur_close < vwap_u1 * 0.999) and (cur_close < bb_upper * 0.999)
-        not_chased = cur_close <= (vwap * 1.0032)
-        bounce_margin_ok = cur_close >= (vwap * 1.0012)
-        prior_trend_ok = prev_close >= vwap
+        # Quadruple filter: SuperTrend bullish, EMA9 >= EMA20, EMA20 >= EMA50, Close >= EMA50, healthy RSI
+        trend_aligned = (st_dir == 1) and (ema_9 >= ema_20 * 0.998) and (ema_20 >= ema_50 * 0.998) and (cur_close >= ema_50 * 0.998) and (45.0 <= rsi <= 68.0)
+        # Extension & Proximity Gate: prevent entering when already stretched to Upper Bollinger ceiling
+        not_extended = (cur_close < bb_upper * 0.9995)
+        not_chased = cur_close <= (vwap * 1.005)
+        bounce_margin_ok = cur_close >= (vwap * 1.0005)
+        prior_trend_ok = prev_close >= (vwap * 0.997)
         min_gain_est = cur_close * 0.0035
-        headroom_ok = (vwap_u2 >= cur_close + min_gain_est) and (bb_upper >= cur_close + min_gain_est)
+        headroom_ok = (bb_upper >= cur_close + min_gain_est * 0.5)
 
-        if cur_low <= vwap * 1.001 and cur_low >= vwap * 0.997 and cur_close > vwap and bounce_margin_ok and cur_close > cur_open and close_quality and prior_trend_ok and prev_close >= vwap * 0.998 and vol_ok and trend_aligned and not_extended and not_chased and headroom_ok:
+        if cur_low <= vwap * 1.0025 and cur_low >= vwap * 0.994 and cur_close > vwap and bounce_margin_ok and cur_close >= cur_open and close_quality and prior_trend_ok and vol_ok and trend_aligned and not_extended and not_chased and headroom_ok:
             atr = float(current.get("atr_14", cur_close * 0.005))
             stop = round(min(cur_low, vwap) - (atr * 0.35), 2)
             stop = min(stop, round(cur_close - max(cur_close * 0.0035, atr * 0.35), 2))
-            stop = max(stop, round(cur_close - max(atr * 0.70, cur_close * 0.0040), 2))
+            stop = max(stop, round(cur_close - max(atr * 0.95, cur_close * 0.0070), 2))
             risk = max(cur_close - stop, cur_close * 0.003)
-            min_gain = max(risk * 1.15, cur_close * 0.0035)
-            tp2 = round(min(cur_close + (risk * 1.35), max(cur_close + (risk * 1.22), vwap_u2)), 2)
+            min_gain = max(risk * 1.18, cur_close * 0.0035)
+            tp2 = round(min(cur_close + (risk * 1.38), max(cur_close + (risk * 1.25), vwap_u2)), 2)
             tp1 = round(max(cur_close + min_gain, min(cur_close + (risk * 1.18), tp2 - (risk * 0.08))), 2)
             tp1 = min(tp1, round(tp2 - (risk * 0.08), 2))
             tp1 = round(max(tp1, cur_close + cur_close * 0.0035), 2)
@@ -374,9 +377,9 @@ class IntradayStrategySuite:
                 "stop_loss": stop,
                 "target_1": tp1,
                 "target_2": tp2,
-                "risk_reward_ratio": "1:1.15 (Primary Target 1) / 1:1.35 (Momentum Ceiling Target 2)",
+                "risk_reward_ratio": "1:1.18 (Primary Target 1) / 1:1.38 (Momentum Ceiling Target 2)",
                 "confidence": 90,
-                "rationale": f"Rejection of VWAP (₹{vwap:.2f}) with bullish green close at ₹{cur_close:.2f}. Primary take-profit Target 1 is ₹{tp1:.2f} (momentum ceiling ₹{tp2:.2f}).",
+                "rationale": f"Rejection of VWAP (₹{vwap:.2f}) with bullish green close at ₹{cur_close:.2f}. SuperTrend Bullish, volume confirmed, 20-EMA dynamic support respected. Primary take-profit Target 1 is ₹{tp1:.2f} (momentum ceiling ₹{tp2:.2f}).",
             }
 
         return {"active": False, "signal": "HOLD"}
@@ -405,9 +408,9 @@ class IntradayStrategySuite:
         vol_sma = float(current.get("vol_sma_20", 1.0))
         bb_upper = float(current.get("bb_upper", cur_close * 1.02))
         vwap_u2 = float(current.get("vwap_upper_2", cur_close * 1.02))
-        not_extended = (cur_close < bb_upper * 0.999) and (cur_close < vwap_u2 * 0.999)
+        not_extended = (cur_close < bb_upper * 0.9995)
         min_gain_est = cur_close * 0.0035
-        headroom_ok = (vwap_u2 >= cur_close + min_gain_est) and (bb_upper >= cur_close + min_gain_est)
+        headroom_ok = (bb_upper >= cur_close + min_gain_est * 0.5)
 
         # Time-of-day regime gates: avoid opening noise, midday lull, and late-session EOD decay
         time_str = str(current.get("timestamp", ""))
@@ -416,8 +419,8 @@ class IntradayStrategySuite:
             return {"active": False, "signal": "HOLD", "reason": "EMA pullback blocked during opening price discovery (< 09:30 IST)"}
         if time_part and ("11:15" <= time_part <= "13:15"):
             return {"active": False, "signal": "HOLD", "reason": "EMA pullback blocked during midday lull (11:15-13:15 IST)"}
-        if time_part and time_part >= "14:15":
-            return {"active": False, "signal": "HOLD", "reason": "EMA pullback blocked after 14:15 IST (insufficient time before 15:20 EOD square-off)"}
+        if time_part and time_part > "13:40":
+            return {"active": False, "signal": "HOLD", "reason": "EMA pullback blocked after 13:40 IST (insufficient time before 15:20 EOD square-off)"}
 
         # Volume confirmation: 1.15x SMA20 morning, 1.25x afternoon (> 13:15 IST)
         vol_req = (vol_sma * 1.25) if (time_part and time_part > "13:15" and vol_sma > 0) else (vol_sma * 1.15)
@@ -427,19 +430,19 @@ class IntradayStrategySuite:
         above_baseline = cur_low >= ema_50 * 0.998
         trend_aligned = (st_dir == 1) and (ema_9 > ema_20) and (ema_20 > ema_50) and (cur_close >= vwap) and (45.0 <= rsi <= 68.0) and (cur_close >= ema_50) and above_baseline
         candle_rng = float(current["high"]) - cur_low
-        close_quality = (cur_close - cur_low) >= (candle_rng * 0.64) if candle_rng > 0 else True
+        close_quality = (cur_close - cur_low) >= (candle_rng * 0.52) if candle_rng > 0 else True
         not_chased = cur_close <= (ema_20 * 1.005)
 
         if trend_aligned and vol_ok and not_extended and not_chased and headroom_ok:
             # Low tested 20 EMA dynamic support, closed green, and reclaimed 9-EMA momentum
-            if cur_low <= ema_20 * 1.002 and cur_low >= ema_20 * 0.997 and cur_close > ema_20 and cur_close > cur_open and close_quality and (cur_close >= ema_9 * 0.9995):
+            if cur_low <= ema_20 * 1.0025 and cur_low >= ema_20 * 0.996 and cur_close > ema_20 and cur_close >= cur_open and close_quality and (cur_close >= ema_9 * 0.999):
                 atr = float(current.get("atr_14", cur_close * 0.005))
                 stop = round(min(ema_20, cur_low) - (atr * 0.35), 2)
                 stop = min(stop, round(cur_close - max(cur_close * 0.0035, atr * 0.35), 2))
-                stop = max(stop, round(cur_close - max(atr * 0.70, cur_close * 0.0040), 2))
+                stop = max(stop, round(cur_close - max(atr * 0.95, cur_close * 0.0070), 2))
                 risk = max(cur_close - stop, cur_close * 0.003)
-                min_gain = max(risk * 1.15, cur_close * 0.0035)
-                tp2 = round(min(cur_close + (risk * 1.35), max(cur_close + (risk * 1.22), bb_upper * 0.999)), 2)
+                min_gain = max(risk * 1.18, cur_close * 0.0035)
+                tp2 = round(min(cur_close + (risk * 1.38), max(cur_close + (risk * 1.25), bb_upper * 0.999)), 2)
                 tp1 = round(max(cur_close + min_gain, min(cur_close + (risk * 1.18), tp2 - (risk * 0.08))), 2)
                 tp1 = min(tp1, round(tp2 - (risk * 0.08), 2))
                 tp1 = round(max(tp1, cur_close + cur_close * 0.0035), 2)
@@ -461,7 +464,7 @@ class IntradayStrategySuite:
                     "stop_loss": stop,
                     "target_1": tp1,
                     "target_2": tp2,
-                    "risk_reward_ratio": "1:1.15 (Primary Target 1) / 1:1.35 (Momentum Ceiling Target 2)",
+                    "risk_reward_ratio": "1:1.18 (Primary Target 1) / 1:1.38 (Momentum Ceiling Target 2)",
                     "confidence": 88,
                     "rationale": f"Bullish EMA ribbon (9-EMA ₹{ema_9:.2f} > 20-EMA ₹{ema_20:.2f} > 50-EMA ₹{ema_50:.2f}) pullback bounce confirmed. Primary Target 1 is ₹{tp1:.2f} (momentum ceiling ₹{tp2:.2f}).",
                 }
@@ -495,16 +498,16 @@ class IntradayStrategySuite:
         vol_sma = float(current.get("vol_sma_20", 1.0))
         bb_upper = float(current.get("bb_upper", cur_close * 1.02))
         vwap_u2 = float(current.get("vwap_upper_2", cur_close * 1.02))
-        not_extended = (cur_close < bb_upper * 0.999) and (cur_close < vwap_u2 * 0.999)
+        not_extended = (cur_close < bb_upper * 0.9995)
         trend_aligned = (ema_9 >= ema_20) and (ema_20 >= ema_50) and (cur_close >= ema_50)
         cur_open = float(current["open"])
         cur_high = float(current["high"])
         cur_low = float(current["low"])
         candle_rng = cur_high - cur_low
-        close_quality = (cur_close - cur_low) >= (candle_rng * 0.64) if candle_rng > 0 else True
-        not_chased = cur_close <= (ema_20 * 1.006)
+        close_quality = (cur_close - cur_low) >= (candle_rng * 0.52) if candle_rng > 0 else True
+        not_chased = cur_close <= (ema_20 * 1.008)
         min_gain_est = cur_close * 0.0035
-        headroom_ok = (vwap_u2 >= cur_close + min_gain_est) and (bb_upper >= cur_close + min_gain_est)
+        headroom_ok = (bb_upper >= cur_close + min_gain_est * 0.5)
 
         # Time-of-day regime gates: avoid opening noise, midday lull, and late-session EOD decay
         time_str = str(current.get("timestamp", ""))
@@ -513,21 +516,21 @@ class IntradayStrategySuite:
             return {"active": False, "signal": "HOLD", "reason": "SuperTrend flip blocked during opening price discovery (< 09:30 IST)"}
         if time_part and ("11:15" <= time_part <= "13:15"):
             return {"active": False, "signal": "HOLD", "reason": "SuperTrend flip blocked during midday lull (11:15-13:15 IST)"}
-        if time_part and time_part >= "14:15":
-            return {"active": False, "signal": "HOLD", "reason": "SuperTrend flip blocked after 14:15 IST (insufficient time before 15:20 EOD square-off)"}
+        if time_part and time_part > "13:40":
+            return {"active": False, "signal": "HOLD", "reason": "SuperTrend flip blocked after 13:40 IST (insufficient time before 15:20 EOD square-off)"}
 
         # Volume confirmation: 1.15x SMA20 morning, 1.25x afternoon (> 13:15 IST)
         vol_req = (vol_sma * 1.25) if (time_part and time_part > "13:15" and vol_sma > 0) else (vol_sma * 1.15)
         vol_ok = vol >= vol_req if vol_sma > 0 else True
 
-        if cur_dir == 1 and prev_dir == -1 and cur_close >= vwap and cur_close >= ema_20 and (48.0 <= rsi <= 68.0) and vol_ok and (cur_close > cur_open) and close_quality and not_extended and not_chased and trend_aligned and headroom_ok:
+        if cur_dir == 1 and prev_dir == -1 and cur_close >= vwap and cur_close >= ema_20 and (48.0 <= rsi <= 68.0) and vol_ok and (cur_close >= cur_open) and close_quality and not_extended and not_chased and trend_aligned and headroom_ok:
             atr = float(current.get("atr_14", cur_close * 0.005))
             stop = round(max(st_val, cur_close - (atr * 0.95)), 2)
             stop = min(stop, round(cur_close - max(cur_close * 0.0035, atr * 0.35), 2))
-            stop = max(stop, round(cur_close - max(atr * 0.70, cur_close * 0.0040), 2))
+            stop = max(stop, round(cur_close - max(atr * 0.95, cur_close * 0.0070), 2))
             risk = max(cur_close - stop, cur_close * 0.003)
-            min_gain = max(risk * 1.15, cur_close * 0.0035)
-            tp2 = round(min(cur_close + (risk * 1.35), max(cur_close + (risk * 1.22), bb_upper * 0.999)), 2)
+            min_gain = max(risk * 1.18, cur_close * 0.0035)
+            tp2 = round(min(cur_close + (risk * 1.38), max(cur_close + (risk * 1.25), bb_upper * 0.999)), 2)
             tp1 = round(max(cur_close + min_gain, min(cur_close + (risk * 1.18), tp2 - (risk * 0.08))), 2)
             tp1 = min(tp1, round(tp2 - (risk * 0.08), 2))
             tp1 = round(max(tp1, cur_close + cur_close * 0.0035), 2)
@@ -549,7 +552,7 @@ class IntradayStrategySuite:
                 "stop_loss": stop,
                 "target_1": tp1,
                 "target_2": tp2,
-                "risk_reward_ratio": "1:1.15 (Primary Target 1) / 1:1.35 (Momentum Ceiling Target 2)",
+                "risk_reward_ratio": "1:1.18 (Primary Target 1) / 1:1.38 (Momentum Ceiling Target 2)",
                 "confidence": 84,
                 "rationale": f"SuperTrend flipped BULLISH at ₹{cur_close:.2f} with trailing support at ₹{stop:.2f}. Primary Target 1 is ₹{tp1:.2f} (momentum ceiling ₹{tp2:.2f}).",
             }
@@ -590,12 +593,12 @@ class IntradayStrategySuite:
         cur_high = float(current["high"])
         cur_low = float(current["low"])
         candle_rng = cur_high - cur_low
-        close_quality = (cur_close - cur_low) >= (candle_rng * 0.64) if candle_rng > 0 else True
+        close_quality = (cur_close - cur_low) >= (candle_rng * 0.52) if candle_rng > 0 else True
         bb_upper = float(current.get("bb_upper", cur_close * 1.02))
         vwap_u2 = float(current.get("vwap_upper_2", cur_close * 1.02))
-        not_extended = (cur_close < bb_upper * 0.999) and (cur_close < vwap_u2 * 0.999)
+        not_extended = (cur_close < bb_upper * 0.9995)
         min_gain_est = cur_close * 0.0035
-        headroom_ok = (vwap_u2 >= cur_close + min_gain_est) and (bb_upper >= cur_close + min_gain_est)
+        headroom_ok = (bb_upper >= cur_close + min_gain_est * 0.5)
 
         # Time-of-day regime gates: avoid opening noise, midday lull, and late-session EOD decay
         time_str = str(current.get("timestamp", ""))
@@ -604,8 +607,8 @@ class IntradayStrategySuite:
             return {"active": False, "signal": "HOLD", "reason": "Pivot breakout blocked during opening price discovery (< 09:30 IST)"}
         if time_part and ("11:15" <= time_part <= "13:15"):
             return {"active": False, "signal": "HOLD", "reason": "Pivot breakout blocked during midday lull (11:15-13:15 IST)"}
-        if time_part and time_part >= "14:15":
-            return {"active": False, "signal": "HOLD", "reason": "Pivot breakout blocked after 14:15 IST (insufficient time before 15:20 EOD square-off)"}
+        if time_part and time_part > "13:40":
+            return {"active": False, "signal": "HOLD", "reason": "Pivot breakout blocked after 13:40 IST (insufficient time before 15:20 EOD square-off)"}
 
         # Volume confirmation: 1.15x SMA20 morning, 1.25x afternoon (> 13:15 IST)
         vol_req = (vol_sma * 1.25) if (time_part and time_part > "13:15" and vol_sma > 0) else (vol_sma * 1.15)
@@ -614,19 +617,19 @@ class IntradayStrategySuite:
         # Check for pristine initial H4 breakout (prevents choppy secondary re-cross traps)
         had_prior_h4_breakout = bool((df.iloc[:-1]["close"] > h4).any()) if len(df) > 3 else False
 
-        trend_ok = (st_dir == 1) and (cur_close >= vwap) and (45.0 <= rsi <= 68.5) and (cur_close > cur_open) and close_quality and (ema_9 >= ema_20) and (cur_close >= ema_50) and (ema_20 >= ema_50) and not_extended
-        not_chasing = cur_close <= (h4 * 1.009)
-        breakout_margin_ok = cur_close >= (h4 * 1.0015)
+        trend_ok = (st_dir == 1) and (cur_close >= vwap) and (45.0 <= rsi <= 68.5) and (cur_close >= cur_open) and close_quality and (ema_9 >= ema_20) and (cur_close >= ema_50) and (ema_20 >= ema_50) and not_extended
+        not_chasing = cur_close <= (h4 * 1.010)
+        breakout_margin_ok = cur_close >= (h4 * 1.0005)
 
         # H4 Bullish Breakout
         if cur_close > h4 and breakout_margin_ok and prev_c <= h4 and not had_prior_h4_breakout and vol_ok and trend_ok and not_chasing and headroom_ok:
             atr = float(current.get("atr_14", cur_close * 0.005))
             stop = round(max(h3, cur_close - (atr * 1.15)), 2)
             stop = min(stop, round(cur_close - max(cur_close * 0.0035, atr * 0.35), 2))
-            stop = max(stop, round(cur_close - max(atr * 0.70, cur_close * 0.0040), 2))
+            stop = max(stop, round(cur_close - max(atr * 0.95, cur_close * 0.0070), 2))
             risk = max(cur_close - stop, cur_close * 0.003)
-            min_gain = max(risk * 1.15, cur_close * 0.0035)
-            tp2 = round(min(cur_close + (risk * 1.35), max(cur_close + (risk * 1.22), h5)), 2)
+            min_gain = max(risk * 1.18, cur_close * 0.0035)
+            tp2 = round(min(cur_close + (risk * 1.38), max(cur_close + (risk * 1.25), h5)), 2)
             tp1 = round(max(cur_close + min_gain, min(cur_close + (risk * 1.18), tp2 - (risk * 0.08))), 2)
             tp1 = min(tp1, round(tp2 - (risk * 0.08), 2))
             tp1 = round(max(tp1, cur_close + cur_close * 0.0035), 2)
@@ -648,7 +651,7 @@ class IntradayStrategySuite:
                 "stop_loss": stop,
                 "target_1": tp1,
                 "target_2": tp2,
-                "risk_reward_ratio": "1:1.15 (Primary Target 1) / 1:1.35 (Momentum Ceiling Target 2)",
+                "risk_reward_ratio": "1:1.18 (Primary Target 1) / 1:1.38 (Momentum Ceiling Target 2)",
                 "confidence": 89,
                 "rationale": f"Price ₹{cur_close:.2f} exploded through Camarilla H4 resistance (₹{h4:.2f}) targeting H5 expansion. Primary Target 1 is ₹{tp1:.2f} (momentum ceiling ₹{tp2:.2f}).",
             }
@@ -682,13 +685,13 @@ class IntradayStrategySuite:
         cur_open = float(current["open"])
         cur_high = float(current["high"])
         candle_rng = cur_high - cur_low
-        close_quality = (cur_close - cur_low) >= (candle_rng * 0.55) if candle_rng > 0 else True
+        close_quality = (cur_close - cur_low) >= (candle_rng * 0.52) if candle_rng > 0 else True
         vwap = float(current.get("vwap", cur_close))
         ema_50 = float(current.get("ema_50", cur_close))
         not_crashing = cur_close >= (vwap * 0.992)
         atr = float(current.get("atr_14", cur_close * 0.005))
         min_gain = max(cur_close * 0.0031, atr * 0.33)
-        headroom_ok = (cur_close < bb_middle) and ((bb_middle * 0.9995 - cur_close) >= min_gain)
+        headroom_ok = (cur_close < bb_middle) and ((bb_middle * 0.9995 - cur_close) >= min_gain * 0.5)
 
         # Time-of-day regime gates: avoid opening noise, midday lull, and late-session EOD decay
         time_str = str(current.get("timestamp", ""))
@@ -697,21 +700,22 @@ class IntradayStrategySuite:
             return {"active": False, "signal": "HOLD", "reason": "Bollinger reversal blocked during opening price discovery (< 09:30 IST)"}
         if time_part and ("11:15" <= time_part <= "13:15"):
             return {"active": False, "signal": "HOLD", "reason": "Bollinger reversal blocked during midday lull (11:15-13:15 IST)"}
-        if time_part and time_part >= "14:15":
-            return {"active": False, "signal": "HOLD", "reason": "Bollinger reversal blocked after 14:15 IST (insufficient time before 15:20 EOD square-off)"}
+        if time_part and time_part > "14:00":
+            return {"active": False, "signal": "HOLD", "reason": "Bollinger reversal blocked after 14:00 IST (insufficient time before 15:20 EOD square-off)"}
 
         # Trend trap protection: block counter-trend dips below both 50-EMA & VWAP
         if cur_close < ema_50 and cur_close < vwap * 0.995:
             return {"active": False, "signal": "HOLD", "reason": "Counter-trend dip below 50-EMA & VWAP ignored"}
 
-        if prev["low"] <= bb_lower and cur_close > bb_lower and cur_close > cur_open and close_quality and vol_ok and not_crashing and headroom_ok and (25.0 <= rsi <= 45.0):
+        if prev["low"] <= bb_lower and cur_close > bb_lower and cur_close >= cur_open and close_quality and vol_ok and not_crashing and headroom_ok and (25.0 <= rsi <= 45.0):
             stop = round(min(prev["low"], cur_low) - (atr * 0.35), 2)
             stop = min(stop, round(cur_close - max(cur_close * 0.0035, atr * 0.35), 2))
-            stop = max(stop, round(cur_close - max(atr * 0.70, cur_close * 0.0040), 2))
+            stop = max(stop, round(cur_close - max(atr * 0.95, cur_close * 0.0070), 2))
             risk = max(cur_close - stop, cur_close * 0.003)
-            tp1 = round(min(bb_middle * 0.9995, cur_close + max(risk * 1.12, min_gain)), 2)
-            tp1 = max(tp1, round(cur_close + min_gain, 2))
-            tp2 = round(max(tp1 + (risk * 0.16), min(cur_close + (risk * 1.35), max(bb_middle, cur_close + (risk * 1.22)))), 2)
+            fee_hurdle = cur_close * 0.0035
+            tp1 = round(min(bb_middle * 0.9995, cur_close + max(risk * 1.18, fee_hurdle)), 2)
+            tp1 = max(tp1, round(cur_close + fee_hurdle, 2))
+            tp2 = round(max(tp1 + (risk * 0.16), min(cur_close + (risk * 1.38), max(bb_middle, cur_close + (risk * 1.25)))), 2)
             tp2 = max(tp2, round(tp1 + max(risk * 0.08, cur_close * 0.0010), 2))
             round_barrier = (math.floor(cur_close / 10.0) + 1.0) * 10.0
             min_tp_spread = max(risk * 0.08, cur_close * 0.0008)
@@ -730,7 +734,7 @@ class IntradayStrategySuite:
                 "stop_loss": stop,
                 "target_1": tp1,
                 "target_2": tp2,
-                "risk_reward_ratio": "1:1.12 (Mean Reversion Target 1) / 1:1.35 (Momentum Ceiling Target 2)",
+                "risk_reward_ratio": "1:1.18 (Mean Reversion Target 1) / 1:1.38 (Momentum Ceiling Target 2)",
                 "confidence": 86,
                 "rationale": f"High-probability statistical mean-reversion bounce: price rejected lower Bollinger Band (₹{bb_lower:.2f}) with green reversal candle. Primary Target 1 is mean reversion to 20-SMA middle band at ₹{tp1:.2f} (momentum ceiling ₹{tp2:.2f}).",
             }
@@ -767,10 +771,10 @@ class IntradayStrategySuite:
         cur_open = float(current["open"])
         cur_low = float(current["low"])
         candle_rng = float(current["high"]) - cur_low
-        close_quality = (cur_close - cur_low) >= (candle_rng * 0.55) if candle_rng > 0 else True
+        close_quality = (cur_close - cur_low) >= (candle_rng * 0.52) if candle_rng > 0 else True
         atr = float(current.get("atr_14", cur_close * 0.005))
         min_gain = max(cur_close * 0.0031, atr * 0.33)
-        headroom_ok = (cur_close < bb_middle) and ((bb_middle * 0.9995 - cur_close) >= min_gain)
+        headroom_ok = (cur_close < bb_middle) and ((bb_middle * 0.9995 - cur_close) >= min_gain * 0.5)
 
         # Time-of-day regime gates: avoid opening noise, midday lull, and late-session EOD decay
         time_str = str(current.get("timestamp", ""))
@@ -779,17 +783,18 @@ class IntradayStrategySuite:
             return {"active": False, "signal": "HOLD", "reason": "RSI reversion blocked during opening price discovery (< 09:30 IST)"}
         if time_part and ("11:15" <= time_part <= "13:15"):
             return {"active": False, "signal": "HOLD", "reason": "RSI reversion blocked during midday lull (11:15-13:15 IST)"}
-        if time_part and time_part >= "14:15":
-            return {"active": False, "signal": "HOLD", "reason": "RSI reversion blocked after 14:15 IST (insufficient time before 15:20 EOD square-off)"}
+        if time_part and time_part > "13:45":
+            return {"active": False, "signal": "HOLD", "reason": "RSI reversion blocked after 13:45 IST (insufficient time before 15:20 EOD square-off)"}
 
-        if prev_rsi < 30 and (32.0 <= cur_rsi <= 44.0) and cur_close > cur_open and close_quality and vol_ok and headroom_ok:
+        if prev_rsi < 30 and (32.0 <= cur_rsi <= 44.0) and cur_close >= cur_open and close_quality and vol_ok and headroom_ok:
             stop = round(min(cur_low, float(prev["low"])) - (atr * 0.35), 2)
             stop = min(stop, round(cur_close - max(cur_close * 0.0035, atr * 0.35), 2))
-            stop = max(stop, round(cur_close - max(atr * 0.70, cur_close * 0.0040), 2))
+            stop = max(stop, round(cur_close - max(atr * 0.95, cur_close * 0.0070), 2))
             risk = max(cur_close - stop, cur_close * 0.003)
-            tp1 = round(min(bb_middle * 0.9995, cur_close + max(risk * 1.12, min_gain)), 2)
-            tp1 = max(tp1, round(cur_close + min_gain, 2))
-            tp2 = round(max(tp1 + (risk * 0.16), min(cur_close + (risk * 1.35), max(bb_middle, cur_close + (risk * 1.22)))), 2)
+            fee_hurdle = cur_close * 0.0035
+            tp1 = round(min(bb_middle * 0.9995, cur_close + max(risk * 1.18, fee_hurdle)), 2)
+            tp1 = max(tp1, round(cur_close + fee_hurdle, 2))
+            tp2 = round(max(tp1 + (risk * 0.16), min(cur_close + (risk * 1.38), max(bb_middle, cur_close + (risk * 1.25)))), 2)
             tp2 = max(tp2, round(tp1 + max(risk * 0.08, cur_close * 0.0010), 2))
             round_barrier = (math.floor(cur_close / 10.0) + 1.0) * 10.0
             min_tp_spread = max(risk * 0.08, cur_close * 0.0008)
@@ -808,7 +813,7 @@ class IntradayStrategySuite:
                 "stop_loss": stop,
                 "target_1": tp1,
                 "target_2": tp2,
-                "risk_reward_ratio": "1:1.12 (Mean Reversion Target 1) / 1:1.35 (Momentum Ceiling Target 2)",
+                "risk_reward_ratio": "1:1.18 (Mean Reversion Target 1) / 1:1.38 (Momentum Ceiling Target 2)",
                 "confidence": 82,
                 "rationale": f"RSI recovered from oversold ({prev_rsi:.1f} -> {cur_rsi:.1f}) with green reversal candle. Primary Target 1 is ₹{tp1:.2f} (momentum ceiling ₹{tp2:.2f}).",
             }
@@ -898,11 +903,21 @@ class IntradayStrategySuite:
             "indicators": {
                 "price": cur_price,
                 "vwap": round(float(df.iloc[-1].get("vwap", cur_price)), 2),
+                "vwap_distance_pct": round(((cur_price - float(df.iloc[-1].get("vwap", cur_price))) / float(df.iloc[-1].get("vwap", cur_price))) * 100.0, 3) if float(df.iloc[-1].get("vwap", 0)) > 0 else 0.0,
                 "ema_9": round(float(df.iloc[-1].get("ema_9", cur_price)), 2),
                 "ema_20": round(float(df.iloc[-1].get("ema_20", cur_price)), 2),
+                "ema_50": round(float(df.iloc[-1].get("ema_50", cur_price)), 2),
                 "supertrend": round(float(df.iloc[-1].get("supertrend", cur_price)), 2),
                 "supertrend_dir": int(df.iloc[-1].get("supertrend_dir", 1)),
                 "rsi_14": round(float(df.iloc[-1].get("rsi_14", 50.0)), 1),
+                "atr_14": round(float(df.iloc[-1].get("atr_14", cur_price * 0.005)), 2),
+                "bb_upper": round(float(df.iloc[-1].get("bb_upper", cur_price * 1.02)), 2),
+                "bb_middle": round(float(df.iloc[-1].get("bb_middle", cur_price)), 2),
+                "bb_lower": round(float(df.iloc[-1].get("bb_lower", cur_price * 0.98)), 2),
+                "vol_sma_20": round(float(df.iloc[-1].get("vol_sma_20", 1.0)), 1),
+                "volume_ratio": round(float(df.iloc[-1].get("volume", 0)) / float(df.iloc[-1].get("vol_sma_20", 1.0)), 2) if float(df.iloc[-1].get("vol_sma_20", 0)) > 0 else 1.0,
+                "confluence_score": net_score,
+                "active_signals_count": len(active),
             },
             "strategies_evaluated": results,
         }

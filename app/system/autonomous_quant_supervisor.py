@@ -75,14 +75,29 @@ class AutonomousQuantSupervisor:
             return ""
 
     def commit_changes(self, message: str) -> bool:
-        """Records all verified code modifications cleanly into Git."""
+        """
+        Pushes verified changes to 'server-agy' branch on GitHub,
+        merges into 'main', and keeps 'main' active for live production execution.
+        """
+        from app.system.git_sync import push_agent_branch, merge_agent_branch_to_main_and_deploy
         try:
-            subprocess.run(["git", "add", "app/trading/intraday_strategies.py", "trading_workspace/"], cwd=BASE_DIR, check=True, timeout=10)
-            subprocess.run(["git", "commit", "-m", message], cwd=BASE_DIR, check=True, timeout=10)
-            logger.info(f"📌 Git commit recorded: '{message}'")
+            # 1. Push to server-agy branch
+            push_agent_branch(
+                branch_name="server-agy",
+                commit_message=message,
+                files_to_stage=["app/trading/intraday_strategies.py", "trading_workspace/"],
+                repo_dir=BASE_DIR
+            )
+            # 2. Merge into main and push main
+            merge_agent_branch_to_main_and_deploy(
+                from_branch="server-agy",
+                merge_message=f"merge(server-agy): {message}",
+                repo_dir=BASE_DIR
+            )
+            logger.info(f"📌 Git commit & branch workflow completed: 'server-agy' -> 'main'")
             return True
-        except subprocess.CalledProcessError as e:
-            logger.warning(f"Git commit skipped or no changes: {e}")
+        except Exception as e:
+            logger.error(f"Git multi-branch workflow error: {e}")
             return False
 
     def revert_unverified_changes(self):

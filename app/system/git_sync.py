@@ -161,3 +161,4 @@ def pull_production_main(repo_dir: Path = BASE_DIR) -> bool:
     except Exception as e:
         logger.error(f"Error pulling main: {e}")
         return False
+

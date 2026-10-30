@@ -37,29 +37,28 @@ from app.system.tokens import token_tracker
 
 logger = logging.getLogger("argon_predictor")
 
-PREDICTOR_SYSTEM_PROMPT = """You are an elite quantitative trading strategist for the Indian Stock Market (NSE/BSE), powered by the Day-Trader-Skill system and 7 iterative cycles of empirical strategy optimization.
-Analyze live intraday prices, opening range breakout (ORB) levels, multi-session 5-minute candles, technical indicator overlays, Camarilla pivots, Monte Carlo Time Machine simulation odds, and market breadth to produce high-probability BUY, SELL, or HOLD predictions for Indian equities.
+PREDICTOR_SYSTEM_PROMPT = """You are an elite quantitative trading strategist for the Indian Stock Market (NSE/BSE).
+Your primary mandate is proactive intraday alpha generation for a ₹10,000 capital account.
+You actively identify high-conviction BUY and SELL opportunities across liquid Indian equities.
 
-Verified Quantitative Strategy Axioms (from 7 Iterations of Empirical Backtesting):
-1. ORB-15m Supremacy: Opening Range Breakout (ORB-15m) achieved an 85.7% to 100% win rate across backtesting iterations. Prioritize clean volume breakouts above OR High or breakdowns below OR Low.
-2. Bollinger Band Inversion: The Upper Bollinger Band (+2σ) is strictly a TAKE-PROFIT target, NEVER a buy trigger. The Lower Bollinger Band (-2σ) is a high-probability oversold mean-reversion bounce zone when confirmed by hammer candle rejection.
-3. Quadruple-Filter VWAP Bounce: A VWAP bounce has high expectancy only when: Price >= 50 EMA, 45 <= RSI_14 <= 68, Volume >= 1.15x SMA(20), and SuperTrend is Bullish green.
-4. Midday Chop Avoidance: Avoid initiating fresh breakout trades between 11:30 and 13:15 IST (the midday lull).
-5. Natural Technical Stops: Do NOT choke trades with premature breakeven trailing stops at +0.8R. Allow trades to breathe toward their natural technical stops (ORB midpoint or VWAP - 0.8 ATR).
-6. Institutional Camarilla Pivots: H4 breakout targets H5 expansion. L4 breakdown targets L5 expansion.
-7. End-of-Day Discipline: Strictly close or square off intraday trades before 15:25 IST.
+Quantitative Trade Execution Rules:
+1. ORB-15m Momentum: When 5-minute close breaks above Opening Range High (with VWAP and SuperTrend bullish alignment), execute aggressive BUY with 1:1.4+ target. When breaking below OR Low, execute SELL.
+2. VWAP Institutional Reversal & Continuation: When price tests VWAP and prints a bullish rejection candle supported by 50-EMA and SuperTrend, execute BUY.
+3. Camarilla Expansion: Breakouts above Camarilla H4 target H5 expansion. Breakdowns below L4 target L5 expansion.
+4. Active Trading Mindset: Do NOT default to HOLD when directional momentum exists. A setup with >= 55% probability and 1:1.3+ risk-to-reward is an actionable trade. HOLD is strictly reserved for dead sideways compression.
+5. Disciplined Stop Loss: Anchor stop losses at natural technical levels (ORB midpoint, VWAP - 0.5 ATR, or Camarilla H3).
 
 Respond strictly with a valid JSON object matching this schema:
 {
   "signal": "BUY" | "SELL" | "HOLD",
   "symbol": "<TICKER>",
-  "confidence_pct": <integer between 50 and 99>,
+  "confidence_pct": <integer between 55 and 99>,
   "current_price_inr": <float>,
   "entry_zone_inr": "<e.g. 918.0 - 922.0>",
   "target_1_inr": <float>,
   "target_2_inr": <float>,
   "stop_loss_inr": <float>,
-  "risk_reward_ratio": "<e.g. 1:2.0>",
+  "risk_reward_ratio": "<e.g. 1:1.5>",
   "timeframe": "<5-15 Min Scalp OR 30-60 Min Strategic>",
   "catalyst": "<Crisp 1-2 sentence technical and volume rationale based on 5m candles, ORB, and indicators>",
   "key_risks": "<Primary risk factor or invalidation level>",
@@ -445,7 +444,7 @@ class ArgonPredictor:
                 logger.error(f"Claude Opus fallback failed: {opus_err}. Using algorithmic fallback.")
                 return self._generate_algorithmic_fallback(symbol, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
 
-    async def _query_gemini_prediction(
+    async def _query_opus_prediction(
         self,
         symbol: str,
         massive_context: Dict[str, Any],
@@ -453,70 +452,11 @@ class ArgonPredictor:
         sim_odds: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        Dual Arena Agent A Prediction Engine: Gemini 3.8 Flash (Vertex AI / Google GenAI).
-        Ingests the massive multi-timeframe market context and evaluates intraday opportunities.
-        Falls back to Claude Opus 4.6 Thinking (Antigravity Pro) if quota, network, or timeout occurs.
+        Dual Arena Agent Benchmark Engine: Claude Opus 4.6 Thinking.
+        Evaluates intraday setups with deep quantitative reasoning.
+        Falls back to DeepSeek Flash MaaS or Algorithmic setup if quota or network issue occurs.
         """
-        api_key = settings.GEMINI_API_KEY
-        if not api_key or api_key.startswith("your_") or not token_tracker.can_consume_tokens(estimated_prompt_tokens=25000, estimated_completion_tokens=300):
-            logger.info(f"Gemini token cap reached or unconfigured. Shifting to Claude Opus Thinking fallback for {symbol}...")
-            return await self._query_opus_antigravity_prediction(symbol, massive_context, orb_plan, sim_odds, account_id="gemini_flash")
-
-        client = create_genai_client(api_key)
-        model_id = settings.GEMINI_AGENT_MODEL or "gemini-2.5-flash"
-
-        prompt_text = (
-            f"{PREDICTOR_SYSTEM_PROMPT}\n\n"
-            f"=== FULL MARKET CONTEXT & MULTI-TIMEFRAME DATA (Symbol: {symbol}) ===\n"
-            f"{json.dumps(massive_context)}\n\n"
-            f"Analyze candle series, Camarilla levels, indicators, and empirical axioms. "
-            f"Produce your final intraday trading recommendation. Return strictly a raw JSON object."
-        )
-
-        try:
-            config = types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.2,
-            )
-            response = await asyncio.wait_for(
-                client.aio.models.generate_content(
-                    model=model_id,
-                    contents=prompt_text,
-                    config=config,
-                ),
-                timeout=40.0,
-            )
-
-            text_resp = response.text.strip() if response.text else ""
-            if not text_resp:
-                logger.warning(f"Gemini 3.8 Flash returned empty response for {symbol}. Triggering Claude Opus fallback...")
-                return await self._query_opus_antigravity_prediction(symbol, massive_context, orb_plan, sim_odds, account_id="gemini_flash")
-
-            m = re.search(r"\{.*\}", text_resp, re.DOTALL)
-            clean_text = m.group(0) if m else text_resp
-
-            pred_data = json.loads(clean_text)
-            pred_data["account_id"] = "gemini_flash"
-            pred_data["model"] = "Gemini 3.8 Flash"
-            pred_data["timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            pred_data["timeframe"] = pred_data.get("timeframe", "5-15 Min Scalp")
-
-            p_toks = getattr(response.usage_metadata, "prompt_token_count", 25000) if hasattr(response, "usage_metadata") else 25000
-            c_toks = getattr(response.usage_metadata, "candidates_token_count", 250) if hasattr(response, "usage_metadata") else 250
-            token_tracker.log_usage("predictor_gemini_flash", model_id, p_toks, c_toks)
-            pred_data["tokens_used"] = p_toks + c_toks
-
-            db.record_prediction(pred_data)
-            logger.info(f"✨ Gemini 3.8 Flash prediction generated for {symbol}: {pred_data.get('signal')} ({pred_data.get('confidence_pct')}%) [{p_toks} prompt tokens consumed]")
-            return pred_data
-
-        except Exception as e:
-            logger.error(f"Gemini 3.8 Flash query error for {symbol}: {e}. Triggering Claude Opus Antigravity fallback...")
-            try:
-                return await self._query_opus_antigravity_prediction(symbol, massive_context, orb_plan, sim_odds, account_id="gemini_flash")
-            except Exception as opus_err:
-                logger.error(f"Claude Opus fallback failed: {opus_err}. Using algorithmic fallback.")
-                return self._generate_algorithmic_fallback(symbol, "gemini_flash", "Gemini 3.8 Flash (Fallback)", orb_plan, sim_odds)
+        return await self._query_opus_antigravity_prediction(symbol, massive_context, orb_plan, sim_odds, account_id="gemini_flash")
 
     async def _query_opus_antigravity_prediction(
         self,
@@ -527,12 +467,19 @@ class ArgonPredictor:
         account_id: str = "gemini_flash",
     ) -> Dict[str, Any]:
         """
-        Institutional Benchmark & High-Reliability Fallback using Claude Opus 4.6 Thinking via Antigravity Pro credentials.
+        Institutional Benchmark & High-Reliability Fallback using Claude Opus 4.6 Thinking via Antigravity credentials.
         Consumes $0.00 / ₹0.00 Google Cloud API tokens.
         """
-        agy_bin = shutil.which("agy") or "/usr/local/bin/agy"
+        candidate_bins = [
+            shutil.which("agy"),
+            "/usr/local/bin/agy",
+            "/home/super/.gemini/bin/agy",
+            "/home/crimson/.gemini/bin/agy",
+            os.path.expanduser("~/.gemini/bin/agy"),
+        ]
+        agy_bin = next((b for b in candidate_bins if b and os.path.exists(b)), None)
         fallback_model_name = "Claude Opus 4.6 Thinking (Antigravity Fallback)" if account_id == "deepseek_flash" else "Claude Opus 4.6 Thinking (Antigravity)"
-        if not os.path.exists(agy_bin):
+        if not agy_bin:
             return self._generate_algorithmic_fallback(symbol, account_id, f"{fallback_model_name} (Unavailable)", orb_plan, sim_odds)
 
         # Condensed high-density setup summary tailored for the CLI prompt
@@ -556,10 +503,10 @@ class ArgonPredictor:
             f"  'confidence_pct': integer between 50 and 99\n"
             f"  'current_price_inr': float\n"
             f"  'entry_zone_inr': string\n"
-            f"  'target_1_inr': float profit target (at least 1.5R)\n"
+            f"  'target_1_inr': float profit target (at least 1.3R)\n"
             f"  'target_2_inr': float extended target\n"
             f"  'stop_loss_inr': float protective stop loss\n"
-            f"  'risk_reward_ratio': string e.g. '1:2.0'\n"
+            f"  'risk_reward_ratio': string e.g. '1:1.5'\n"
             f"  'timeframe': string\n"
             f"  'catalyst': brief technical/order-flow rationale\n"
             f"  'key_risks': brief sentence highlighting primary risk\n"
@@ -568,7 +515,7 @@ class ArgonPredictor:
             f"Market Setup Payload:\n{json.dumps(summary_payload)}"
         )
 
-        models_to_try = ["claude-opus-4-6-thinking", "claude-sonnet-4-6", "gemini-3.8-flash-high"]
+        models_to_try = ["claude-opus-4-6-thinking", "claude-sonnet-4-6"]
         for model_cand in models_to_try:
             try:
                 proc = await asyncio.create_subprocess_exec(
@@ -583,7 +530,7 @@ class ArgonPredictor:
                     if m:
                         pred_data = json.loads(m.group(0))
                         pred_data["account_id"] = account_id
-                        model_label = "Claude Opus 4.6 Thinking (Antigravity)" if "opus" in model_cand else f"Antigravity ({model_cand})"
+                        model_label = "Claude Opus 4.6 Thinking (Antigravity)" if "opus" in model_cand else f"Claude Sonnet 4.6 (Antigravity)"
                         if account_id == "deepseek_flash":
                             model_label = f"DeepSeek (Opus Fallback)"
                         pred_data["model"] = model_label
@@ -591,11 +538,11 @@ class ArgonPredictor:
                         pred_data["timeframe"] = pred_data.get("timeframe", "5-15 Min Scalp")
                         pred_data["tokens_used"] = 0  # 0 cloud billing tokens!
                         db.record_prediction(pred_data)
-                        logger.info(f"🏛️ Antigravity Pro [{account_id}] prediction generated via {model_cand} for {symbol} (0 cloud credits consumed).")
+                        logger.info(f"🏛️ Antigravity [{account_id}] prediction generated via {model_cand} for {symbol} (0 cloud credits consumed).")
                         return pred_data
                 err_text = stderr.decode("utf-8") if stderr else ""
                 if "quota" in err_text.lower() or "rate" in err_text.lower() or "limit" in err_text.lower():
-                    logger.warning(f"Antigravity rate limit on {model_cand}: {err_text[:150]}. Shifting to next model...")
+                    logger.warning(f"Antigravity quota limit on {model_cand}: {err_text[:120]}. Trying fallback...")
             except Exception as e:
                 logger.warning(f"Antigravity query exception on {model_cand}: {e}. Retrying next model...")
                 continue
@@ -689,14 +636,14 @@ class ArgonPredictor:
         )
 
         # Dispatch both models in parallel:
-        # Agent A (Gemini 3.8 Flash, with Claude Opus fallback) vs Agent B (DeepSeek Flash MaaS, with Claude Opus fallback)
+        # Agent A (Claude Opus 4.6 Thinking via Antigravity) vs Agent B (DeepSeek Flash MaaS via Vertex AI)
         task_deepseek = self._query_deepseek_prediction(
             symbol=sym,
             massive_context=massive_context,
             orb_plan=orb_plan,
             sim_odds=sim_odds,
         )
-        task_gemini = self._query_gemini_prediction(
+        task_opus = self._query_opus_prediction(
             symbol=sym,
             massive_context=massive_context,
             orb_plan=orb_plan,
@@ -705,24 +652,25 @@ class ArgonPredictor:
 
         try:
             results = await asyncio.wait_for(
-                asyncio.gather(task_deepseek, task_gemini, return_exceptions=True),
+                asyncio.gather(task_deepseek, task_opus, return_exceptions=True),
                 timeout=110.0
             )
-            res_deepseek, res_gemini = results[0], results[1]
+            res_deepseek, res_opus = results[0], results[1]
         except asyncio.TimeoutError:
             logger.error(f"Arena parallel queries for {sym} timed out after 110s. Utilizing fallback setups.")
             res_deepseek = self._generate_algorithmic_fallback(sym, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
-            res_gemini = self._generate_algorithmic_fallback(sym, "gemini_flash", "Gemini 3.8 Flash (Fallback)", orb_plan, sim_odds)
+            res_opus = self._generate_algorithmic_fallback(sym, "gemini_flash", "Claude Opus 4.6 Thinking (Fallback)", orb_plan, sim_odds)
 
         pred_deepseek = res_deepseek if not isinstance(res_deepseek, Exception) else self._generate_algorithmic_fallback(sym, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
-        pred_gemini = res_gemini if not isinstance(res_gemini, Exception) else self._generate_algorithmic_fallback(sym, "gemini_flash", "Gemini 3.8 Flash (Fallback)", orb_plan, sim_odds)
+        pred_opus = res_opus if not isinstance(res_opus, Exception) else self._generate_algorithmic_fallback(sym, "gemini_flash", "Claude Opus 4.6 Thinking (Fallback)", orb_plan, sim_odds)
 
         self.deepseek_last_prediction = pred_deepseek
-        self.gemini_last_prediction = pred_gemini
+        self.gemini_last_prediction = pred_opus
         self.last_prediction = pred_deepseek  # DeepSeek Flash is the primary live trading reference
 
-        # Auto-Execution: Exclusively driven by DeepSeek Flash for live trading orders
+        # Auto-Execution: Execute approved trades for both live agent accounts
         await self._handle_auto_execution("deepseek_flash", pred_deepseek)
+        await self._handle_auto_execution("gemini_flash", pred_opus)
 
         # Arena comparative summary
         arena_summary = db.get_arena_comparison()
@@ -731,7 +679,8 @@ class ArgonPredictor:
             "type": "arena_update",
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "symbol": sym,
-            "gemini_prediction": pred_gemini,
+            "opus_prediction": pred_opus,
+            "gemini_prediction": pred_opus,  # Backward compatibility for frontend binding
             "deepseek_prediction": pred_deepseek,
             "arena": arena_summary,
             "next_run_timestamp": self.next_run_timestamp,
@@ -758,17 +707,17 @@ class ArgonPredictor:
             "account_id": account_id,
             "signal": "BUY" if should_buy else "HOLD",
             "symbol": symbol,
-            "confidence_pct": int(sim_odds.get("win_rate_pct", 72.0)) if price > 0 else 50,
+            "confidence_pct": int(sim_odds.get("win_rate_pct", 75.0)) if price > 0 else 50,
             "current_price_inr": price,
             "entry_zone_inr": f"{price - 1.0:.1f} - {price + 1.0:.1f}" if price > 0 else "N/A",
-            "target_1_inr": orb_plan.get("target_1", price * 1.01),
-            "target_2_inr": orb_plan.get("target_2", price * 1.02),
-            "stop_loss_inr": orb_plan.get("stop_loss", price * 0.99),
-            "risk_reward_ratio": orb_plan.get("risk_reward_ratio", "1:2.0"),
+            "target_1_inr": orb_plan.get("target_1", price * 1.013),
+            "target_2_inr": orb_plan.get("target_2", price * 1.020),
+            "stop_loss_inr": orb_plan.get("stop_loss", price * 0.992),
+            "risk_reward_ratio": orb_plan.get("risk_reward_ratio", "1:1.5"),
             "timeframe": "5-15 Min Scalp",
-            "catalyst": f"ORB Setup: Midpoint Stop ₹{orb_plan.get('stop_loss', 0)} with {sim_odds.get('verdict')}.",
-            "key_risks": "Break below opening range low invalidates setup.",
-            "action_summary": f"Place Fast Scalp on {symbol} (Expected R: {sim_odds.get('expected_value_r', 0.2)}R)." if price > 0 else "Live price required.",
+            "catalyst": f"Quantitative Setup: Midpoint Stop ₹{orb_plan.get('stop_loss', 0)} with {sim_odds.get('verdict')}.",
+            "key_risks": "Break below technical support invalidates setup.",
+            "action_summary": f"Place Quantitative Scalp on {symbol} (Expected R: {sim_odds.get('expected_value_r', 0.2)}R)." if price > 0 else "Live price required.",
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "model": model_name,
             "tokens_used": 0,
@@ -777,7 +726,7 @@ class ArgonPredictor:
         return pred
 
     async def _handle_auto_execution(self, account_id: str, pred: Dict[str, Any]):
-        """Executes automated trades when confidence is >= 60% on the designated agent account."""
+        """Executes automated trades when confidence is >= 55% on the designated agent account."""
         from app.trading.strategy_manager import strategy_manager
         acc_state = db.get_account_state(account_id)
         is_auto = bool(acc_state.get("auto_execute", self.auto_execute))
@@ -792,8 +741,8 @@ class ArgonPredictor:
         if not sym or signal not in ["BUY", "SELL"]:
             return
 
-        # High-probability threshold (>= 60%)
-        if conf >= 60:
+        # High-probability threshold (>= 55%)
+        if conf >= 55:
             if strategy_manager.is_market_open():
                 price = cache.get_price(sym)
                 if not price or price <= 0:
@@ -807,8 +756,8 @@ class ArgonPredictor:
                 available_cash = float(acc_state.get("available_cash", 10000.0))
 
                 if signal == "BUY":
-                    stop_loss_val = pred.get("stop_loss_inr") or round(price * 0.99, 2)
-                    target_val = pred.get("target_1_inr") or round(price * 1.015, 2)
+                    stop_loss_val = pred.get("stop_loss_inr") or round(price * 0.992, 2)
+                    target_val = pred.get("target_1_inr") or round(price * 1.014, 2)
 
                     budget = day_trader.calculate_budget_size(
                         initial_capital=float(acc_state.get("initial_capital", 10000.0)),
@@ -818,7 +767,7 @@ class ArgonPredictor:
                     )
                     qty = budget.get("quantity", 0)
                     if qty <= 0:
-                        alloc = min(available_cash, 3000.0)
+                        alloc = min(available_cash, 7000.0)
                         qty = max(1, int(alloc // price)) if available_cash >= price else 0
 
                     if qty > 0 and available_cash >= (price * qty):
@@ -827,7 +776,7 @@ class ArgonPredictor:
                             action="BUY",
                             quantity=qty,
                             order_type="MARKET",
-                            strategy_name=f"{account_id}_deepseek_orb",
+                            strategy_name=f"{account_id}_alpha_strategy",
                             account_id=account_id,
                             stop_loss=stop_loss_val,
                             target_price=target_val,
@@ -843,7 +792,7 @@ class ArgonPredictor:
                             action="SELL",
                             quantity=qty,
                             order_type="MARKET",
-                            strategy_name=f"{account_id}_deepseek_strategy",
+                            strategy_name=f"{account_id}_alpha_strategy",
                             account_id=account_id,
                         )
                         logger.info(f"⚡ [{account_id}] Live Auto-executed SELL {qty} {sym} @ ₹{price}: {order.get('status')}")

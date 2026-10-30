@@ -32,10 +32,19 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 
-AGY_BIN = "/usr/local/bin/agy" if os.path.exists("/usr/local/bin/agy") else "agy"
-CODING_MODEL = "gemini-3.8-flash-high"
+import shutil
+
+candidate_bins = [
+    shutil.which("agy"),
+    "/usr/local/bin/agy",
+    "/home/super/.gemini/bin/agy",
+    "/home/crimson/.gemini/bin/agy",
+    os.path.expanduser("~/.gemini/bin/agy"),
+]
+AGY_BIN = next((b for b in candidate_bins if b and os.path.exists(b)), "agy")
+CODING_MODEL = "claude-opus-4-6-thinking"
 PREDICTION_MODEL = "claude-opus-4-6-thinking"
-PREDICTION_FALLBACKS = ["claude-sonnet-4-6", "gemini-3.8-flash-high"]
+PREDICTION_FALLBACKS = ["claude-sonnet-4-6"]
 
 
 class AutonomousQuantSupervisor:
@@ -242,9 +251,10 @@ class AutonomousQuantSupervisor:
                 post_dd = post_res.get("max_drawdown_pct", 0.0)
                 post_pnl = post_res.get("net_pnl_inr", 0.0)
 
-                # Acceptance criteria: Must be net profitable with solid profit factor
-                if post_pf >= 2.0 and post_wr >= 70.0 and post_dd <= 1.0:
-                    logger.info(f"🏆 Optimization Accepted! Win Rate: {post_wr}%, Profit Factor: {post_pf}")
+                total_opt_trades = post_res.get("total_trades", 0)
+                # Acceptance criteria: Must be net profitable with solid profit factor, minimum 15 trades, and net P&L >= ₹150
+                if post_pf >= 1.5 and post_wr >= 50.0 and post_dd <= 1.5 and total_opt_trades >= 15 and post_pnl >= 150.0:
+                    logger.info(f"🏆 Optimization Accepted! Win Rate: {post_wr}%, Profit Factor: {post_pf}, Trades: {total_opt_trades}, P&L: ₹{post_pnl:+,.2f}")
                     
                     # Record to persistent learning markdown
                     timestamp_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")

@@ -201,13 +201,13 @@ class DayTraderSkillAdapter:
         entry_price: float,
         stop_loss: float,
         max_loss_pct: float = 0.02,  # 2% max risk per trade (trader-budget standard)
-        max_position_pct: float = 0.30,  # Max 30% of capital in one position
+        max_position_pct: float = 0.70,  # Max 70% of capital in one position for intraday alpha
     ) -> Dict[str, Any]:
         """
         Position Sizing from trader-budget:
         Computes the safe quantity of whole shares based on:
         1. Max loss limit: ₹200 max loss on ₹10,000 capital (2%)
-        2. Position cap: max ₹3,000 allocation
+        2. Position cap: max ₹7,000 allocation for intraday equities
         3. Available cash balance
         """
         if entry_price <= 0:

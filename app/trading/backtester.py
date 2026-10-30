@@ -34,7 +34,7 @@ class HistoricalBacktestEngine:
     def __init__(self, initial_capital: float = 10000.0):
         self.initial_capital = initial_capital
         self.max_loss_pct = 0.02  # 2% max risk per trade (₹200 on ₹10k)
-        self.max_position_pct = 0.30  # Max ₹3,000 position cap
+        self.max_position_pct = 0.70  # Max ₹7,000 position cap for intraday alpha
 
     def fetch_historical_bars(self, symbols: List[str], period: str = "5d") -> Dict[str, pd.DataFrame]:
         """Fetches verified 5-minute historical candle data for the requested Indian tickers."""
@@ -104,7 +104,7 @@ Respond strictly in JSON:
                     model="deepseek-ai/deepseek-v4.1-flash-maas",
                     contents=prompt,
                 ),
-                timeout=12.0
+                timeout=30.0
             )
             text = resp.text.strip()
             m = re.search(r"\{.*\}", text, re.DOTALL)
@@ -256,7 +256,8 @@ Respond strictly in JSON:
                             continue
 
                     # 2. Look for new trade entry if no position is open
-                    if not open_trade and time_part < "14:45":
+                    trades_in_day = sum(1 for t in trades if t["symbol"] == sym and t["date"] == date_str)
+                    if not open_trade and time_part < "14:45" and trades_in_day < 1:
                         # Optional time filter: avoid choppy lunch session (11:30 to 13:15 IST)
                         if time_filter and ("11:30" <= time_part <= "13:15"):
                             continue
@@ -275,8 +276,8 @@ Respond strictly in JSON:
 
                             # Sizing: 2% risk rule
                             risk_per_share = max(entry_p - sl_p, entry_p * 0.003)
-                            max_risk_inr = 200.0  # 2% of ₹10,000
-                            max_alloc_inr = 3000.0  # 30% position cap
+                            max_risk_inr = self.initial_capital * self.max_loss_pct  # 2% of ₹10,000 (₹200)
+                            max_alloc_inr = self.initial_capital * self.max_position_pct  # 70% position cap (₹7,000)
 
                             shares = int(min(max_risk_inr // risk_per_share, max_alloc_inr // entry_p, cash // entry_p))
                             if shares <= 0 and cash >= entry_p and entry_p <= max_alloc_inr:

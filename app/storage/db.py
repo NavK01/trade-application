@@ -238,25 +238,29 @@ class DatabaseManager:
             init_cap = settings.INITIAL_CAPITAL_INR
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-            # Seed Account 1: Gemini 3.8 Flash
+            # Seed Account 1: Claude Opus 4.6 Thinking (Antigravity Benchmark)
             cursor.execute("SELECT COUNT(*) as count FROM account_state WHERE account_id = 'gemini_flash' OR id = 1")
             if cursor.fetchone()["count"] == 0:
                 cursor.execute("""
                     INSERT INTO account_state (id, account_id, account_name, initial_capital, available_cash, total_realized_pnl, auto_execute, updated_at)
-                    VALUES (1, 'gemini_flash', 'Gemini 3.8 Flash', ?, ?, 0.0, ?, ?)
-                """, (init_cap, init_cap, 1 if settings.AUTO_EXECUTE_DEFAULT else 0, now))
+                    VALUES (1, 'gemini_flash', 'Claude Opus 4.6 Thinking', ?, ?, 0.0, 1, ?)
+                """, (init_cap, init_cap, now))
             else:
                 cursor.execute("""
-                    UPDATE account_state SET account_id = 'gemini_flash', account_name = 'Gemini 3.8 Flash' WHERE id = 1 AND account_id IS NULL
+                    UPDATE account_state SET account_name = 'Claude Opus 4.6 Thinking', auto_execute = 1 WHERE account_id = 'gemini_flash' OR id = 1
                 """)
 
-            # Seed Account 2: DeepSeek Flash MaaS
+            # Seed Account 2: DeepSeek Flash MaaS (Primary Live Execution)
             cursor.execute("SELECT COUNT(*) as count FROM account_state WHERE account_id = 'deepseek_flash' OR id = 2")
             if cursor.fetchone()["count"] == 0:
                 cursor.execute("""
                     INSERT INTO account_state (id, account_id, account_name, initial_capital, available_cash, total_realized_pnl, auto_execute, updated_at)
-                    VALUES (2, 'deepseek_flash', 'DeepSeek Flash MaaS', ?, ?, 0.0, ?, ?)
-                """, (init_cap, init_cap, 1 if settings.AUTO_EXECUTE_DEFAULT else 0, now))
+                    VALUES (2, 'deepseek_flash', 'DeepSeek Flash MaaS', ?, ?, 0.0, 1, ?)
+                """, (init_cap, init_cap, now))
+            else:
+                cursor.execute("""
+                    UPDATE account_state SET account_name = 'DeepSeek Flash MaaS', auto_execute = 1 WHERE account_id = 'deepseek_flash' OR id = 2
+                """)
 
             conn.commit()
 

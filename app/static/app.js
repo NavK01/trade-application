@@ -511,7 +511,7 @@ document.addEventListener('DOMContentLoaded', () => {
           deepseek_prediction: data.deepseek_prediction,
           next_run_timestamp: data.next_run_timestamp,
         });
-        appendChatMessage('System', `⚔️ AI Arena cycle executed on ${activeChartSymbol}: Gemini [${data.gemini_prediction.signal} ${data.gemini_prediction.confidence_pct}%] vs DeepSeek [${data.deepseek_prediction.signal} ${data.deepseek_prediction.confidence_pct}%]`, 'system');
+        appendChatMessage('System', `⚔️ AI Arena cycle executed on ${activeChartSymbol}: Claude Opus [${data.gemini_prediction.signal} ${data.gemini_prediction.confidence_pct}%] vs DeepSeek [${data.deepseek_prediction.signal} ${data.deepseek_prediction.confidence_pct}%]`, 'system');
       } catch (e) {
         console.error('Arena trigger error:', e);
       } finally {
@@ -608,8 +608,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const dData = await dRes.json();
 
       const allPositions = [
-        ...(gData.positions || []).map(p => ({ ...p, account_id: 'gemini_flash', agent_name: 'Gemini 3.8 Flash' })),
-        ...(dData.positions || []).map(p => ({ ...p, account_id: 'deepseek_flash', agent_name: 'DeepSeek Flash' }))
+        ...(gData.positions || []).map(p => ({ ...p, account_id: 'gemini_flash', agent_name: 'Claude Opus 4.6 Thinking' })),
+        ...(dData.positions || []).map(p => ({ ...p, account_id: 'deepseek_flash', agent_name: 'DeepSeek Flash MaaS' }))
       ];
 
       renderPositionsTable(allPositions);
@@ -646,7 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><span class="badge ${agentBadgeCls}">${isGemini ? 'Gemini' : 'DeepSeek'}</span></td>
+        <td><span class="badge ${agentBadgeCls}">${isGemini ? 'Claude Opus' : 'DeepSeek'}</span></td>
         <td><strong>${pos.symbol}</strong></td>
         <td>${pos.quantity}</td>
         <td>₹ ${pos.avg_price}</td>
@@ -695,7 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${timeStr}</td>
-        <td><span class="badge ${isGemini ? 'badge-accent' : 'badge-done'}">${isGemini ? 'Gemini' : 'DeepSeek'}</span></td>
+        <td><span class="badge ${isGemini ? 'badge-accent' : 'badge-done'}">${isGemini ? 'Claude Opus' : 'DeepSeek'}</span></td>
         <td><strong>${o.symbol}</strong></td>
         <td class="${isBuy ? 'val-green' : 'val-red'}"><strong>${o.action}</strong></td>
         <td>${o.quantity}</td>
@@ -780,7 +780,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Reset Account Button
   if (btnResetAccount) {
     btnResetAccount.addEventListener('click', async () => {
-      if (confirm('Reset both Gemini & DeepSeek accounts back to ₹10,000 initial capital?')) {
+      if (confirm('Reset both Claude Opus & DeepSeek accounts back to ₹10,000 initial capital?')) {
         await fetch('/api/trading/reset-account?capital=10000', { method: 'POST' });
         updateDualArena();
         loadPositionsAndOrders();
@@ -798,7 +798,7 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const res = await fetch('/api/trading/pre-market-scan', { method: 'POST' });
         const data = await res.json();
-        appendChatMessage('Gemini Advisor', `🌅 Pre-Market Analysis Complete: ${data.analysis || 'High momentum sectors identified.'}`, 'bot');
+        appendChatMessage('Quant Advisor', `🌅 Pre-Market Analysis Complete: ${data.analysis || 'High momentum sectors identified.'}`, 'bot');
       } catch (e) {
         console.error(e);
       } finally {
@@ -895,7 +895,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnSendChat.disabled = true;
 
     try {
-      const model = chatModelSelect.value || 'gemini-3.8-flash';
+      const model = chatModelSelect.value || 'deepseek-ai/deepseek-v4.1-flash-maas';
       const use_search = chatSearchToggle.checked;
       const res = await fetch('/api/chatbot/chat', {
         method: 'POST',
@@ -904,7 +904,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await res.json();
       const botReply = data.response || data.reply || (data.error ? ('Error: ' + data.error) : 'No response.');
-      appendChatMessage('Gemini Chatbot', botReply, 'bot');
+      appendChatMessage('Quant Chatbot', botReply, 'bot');
 
       if (data.order_executed || data.trade_result) {
         loadPositionsAndOrders();

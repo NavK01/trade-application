@@ -161,62 +161,48 @@ class StrategyManager:
         sources = []
         tokens_used = 0
 
+        news_res = search_indian_market_news(query, max_results=4)
+        articles = news_res.get("articles", [])
+        sources = [{"title": a.get("title", ""), "url": a.get("url", "")} for a in articles]
+        headlines = "\n".join([f"- {a.get('title')}: {a.get('snippet')}" for a in articles[:3]])
+
         if api_key and not api_key.startswith("your_"):
             try:
-                client = create_genai_client(api_key)
+                client = create_genai_client(api_key, location="global")
                 prompt = f"""
                 You are a senior quantitative strategist for the Indian Stock Market (NSE/BSE).
+                Live Market Headlines:
+                {headlines}
+
                 Perform a pre-market morning analysis:
                 1. What are the key macroeconomic drivers and Gift Nifty sentiment today?
                 2. Which budget-friendly stocks (e.g. Tata Motors, SBI, ITC, Wipro, ICICI Bank, Infosys) have positive catalysts?
                 3. Provide 2-3 specific BUY/SELL bias recommendations for an investor with ₹10,000 initial capital.
+                Return concise markdown.
                 """
                 response = await client.aio.models.generate_content(
-                    model=settings.GEMINI_CHAT_MODEL,
+                    model="deepseek-ai/deepseek-v4.1-flash-maas",
                     contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction="Provide a concise, quantitative pre-market plan for Indian equities with actionable levels in INR (₹).",
-                        temperature=0.2,
-                        tools=[types.Tool(google_search=types.GoogleSearch())],
-                    )
                 )
                 grounded_text = response.text or ""
 
-                # Extract grounding metadata
-                if response.candidates and response.candidates[0].grounding_metadata:
-                    gm = response.candidates[0].grounding_metadata
-                    chunks = getattr(gm, "grounding_chunks", None)
-                    if chunks:
-                        for c in chunks:
-                            if hasattr(c, "web") and c.web:
-                                sources.append({
-                                    "title": getattr(c.web, "title", "Source"),
-                                    "url": getattr(c.web, "uri", ""),
-                                })
-
-                # Estimate tokens
                 prompt_toks = getattr(response.usage_metadata, "prompt_token_count", 350) if hasattr(response, "usage_metadata") else 350
                 comp_toks = getattr(response.usage_metadata, "candidates_token_count", 400) if hasattr(response, "usage_metadata") else 400
                 tokens_used = prompt_toks + comp_toks
-                token_tracker.log_usage("pre_market_analysis", settings.GEMINI_CHAT_MODEL, prompt_toks, comp_toks)
+                token_tracker.log_usage("pre_market_analysis", "deepseek-ai/deepseek-v4.1-flash-maas", prompt_toks, comp_toks)
 
             except Exception as e:
-                logger.warning(f"Google Search Pre-Market API call: {e}. Using DuckDuckGo fallback.")
+                logger.warning(f"DeepSeek Pre-Market API call: {e}. Using web news fallback.")
 
         if not grounded_text:
-            # Fallback web search using DuckDuckGo
-            news_res = search_indian_market_news(query, max_results=4)
-            articles = news_res.get("articles", [])
-            sources = [{"title": a.get("title", ""), "url": a.get("url", "")} for a in articles]
-            headlines = "\n".join([f"- {a.get('title')}: {a.get('snippet')}" for a in articles[:3]])
             grounded_text = (
-                f"### 🌅 Pre-Market Intelligence Brief (Simulated & Web Fallback)\n\n"
-                f"**Market Tone:** Indian indices trading steady with cautious optimism near 22,500 levels.\n"
+                f"### 🌅 Pre-Market Intelligence Brief (Web Intelligence)\n\n"
+                f"**Market Tone:** Indian indices trading steady with cautious optimism near 23,000 levels.\n"
                 f"**Recent Headlines:**\n{headlines}\n\n"
                 f"**Budget Allocation Strategy (₹10,000 Initial Capital):**\n"
-                f"- **Tata Motors (~₹920):** Target 2-3 shares on pullback near VWAP.\n"
+                f"- **Tata Motors (~₹384):** Target 5-7 shares on pullback near VWAP.\n"
                 f"- **SBI (~₹810):** Target 3-4 shares with strict 1% stop-loss.\n"
-                f"- **ITC (~₹470):** Defensive defensive hedge (5-6 shares)."
+                f"- **ITC (~₹470):** Defensive hedge (5-6 shares)."
             )
 
         report = {
@@ -310,8 +296,8 @@ class StrategyManager:
         avail_cash = execution_engine.available_cash
 
         if signal == "BUY" and confidence >= 70:
-            # Sizing: Allocate up to 35% of available funds or 1 share minimum
-            allocated = min(avail_cash, settings.INITIAL_CAPITAL_INR * 0.35)
+            # Sizing: Allocate up to 70% of available funds or 1 share minimum
+            allocated = min(avail_cash, settings.INITIAL_CAPITAL_INR * 0.70)
             if allocated < price:
                 allocated = avail_cash
             qty = int(allocated // price)

@@ -206,8 +206,8 @@
           <div class="order-input-group">
             <label for="order-account-select">Agent:</label>
             <select id="order-account-select" class="form-select-small">
-              <option value="gemini_flash" selected>Gemini 3.8 Flash (Account A)</option>
-              <option value="deepseek_flash">DeepSeek Flash (Account B)</option>
+              <option value="gemini_flash" selected>Claude Opus 4.6 Thinking (Account A)</option>
+              <option value="deepseek_flash">DeepSeek Flash MaaS (Account B)</option>
             </select>
           </div>
 
@@ -277,7 +277,7 @@
           <div class="positions-filter-bar">
             <span>Filter Account:</span>
             <button class="chip-filter active" data-acc="all">All Agents</button>
-            <button class="chip-filter" data-acc="gemini_flash">Gemini Flash</button>
+            <button class="chip-filter" data-acc="gemini_flash">Claude Opus</button>
             <button class="chip-filter" data-acc="deepseek_flash">DeepSeek Flash</button>
           </div>
           <div class="table-container">
@@ -335,17 +335,16 @@
       <!-- Column 3: Live Quant Chatbot, Live Voice & Token Metrics -->
       <section class="panel chat-voice-panel">
         <div class="panel-header">
-          <h2>💬 Live Quant Chatbot (Gemini + Search)</h2>
+          <h2>💬 Live Quant Chatbot (DeepSeek + Search)</h2>
           <div class="header-right chat-controls">
             <label class="search-toggle-label" title="Toggle built-in Google Search grounding">
               <input type="checkbox" id="chat-search-toggle" checked />
               <span class="search-toggle-text">🔍 Search</span>
             </label>
             <select id="chat-model-select" class="form-select chat-model-dropdown" title="Select Model">
-              <option value="gemini-3.8-flash" selected>Gemini 3.8 Flash</option>
-              <option value="deepseek-ai/deepseek-v4.1-flash-maas">DeepSeek Flash MaaS</option>
+              <option value="deepseek-ai/deepseek-v4.1-flash-maas" selected>DeepSeek Flash MaaS</option>
+              <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
               <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
             </select>
           </div>
         </div>
@@ -353,7 +352,7 @@
         <div class="chat-messages" id="chat-messages">
           <div class="chat-msg system-msg">
             <span class="sender">Trading Assistant:</span>
-            <span class="text">Welcome to the Gemini Quant Arena! Both <strong>Gemini 3.8 Flash</strong> and <strong>DeepSeek Flash</strong> are running in parallel on 5-minute cycles with ₹10,000 credits each. You can query breakout stocks, inspect charts, or trade instantly (e.g. <code>"Buy 10 SBIN"</code> or <code>"Sell 5 RELIANCE"</code>).</span>
+            <span class="text">Welcome to the Antigravity Quant Arena! Both <strong>Claude Opus 4.6 Thinking</strong> and <strong>DeepSeek Flash MaaS</strong> are running in parallel on 5-minute cycles with ₹10,000 credits each. You can query breakout stocks, inspect charts, or trade instantly (e.g. <code>"Buy 10 SBIN"</code> or <code>"Sell 5 RELIANCE"</code>).</span>
           </div>
         </div>
 

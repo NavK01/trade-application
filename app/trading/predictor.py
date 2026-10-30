@@ -541,11 +541,12 @@ class ArgonPredictor:
                         logger.info(f"🏛️ Antigravity [{account_id}] prediction generated via {model_cand} for {symbol} (0 cloud credits consumed).")
                         return pred_data
                 err_text = stderr.decode("utf-8") if stderr else ""
-                if "quota" in err_text.lower() or "rate" in err_text.lower() or "limit" in err_text.lower():
-                    logger.warning(f"Antigravity quota limit on {model_cand}: {err_text[:120]}. Trying fallback...")
+                if "quota" in err_text.lower() or "rate" in err_text.lower() or "limit" in err_text.lower() or "429" in err_text:
+                    logger.warning(f"Antigravity quota limit on {model_cand}: {err_text[:120]}.")
+                    break
             except Exception as e:
-                logger.warning(f"Antigravity query exception on {model_cand}: {e}. Retrying next model...")
-                continue
+                logger.warning(f"Antigravity query exception on {model_cand}: {e}.")
+                break
 
         return self._generate_algorithmic_fallback(symbol, account_id, f"{fallback_model_name} (Fallback)", orb_plan, sim_odds)
 
@@ -696,28 +697,56 @@ class ArgonPredictor:
         orb_plan: Dict[str, Any],
         sim_odds: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """High-probability algorithmic prediction consuming 0 tokens using Day Trader Skill rules."""
+        """High-probability algorithmic prediction consuming 0 tokens using Day Trader Skill & Quant Confluence rules."""
         price = orb_plan.get("entry_price") or cache.get_price(symbol)
         if not price or price <= 0:
             q = get_indian_stock_quote(symbol)
             price = q.get("current_price", 0.0)
 
-        should_buy = (sim_odds.get("recommendation") == "EXECUTE") and (price > 0)
+        # Check technical indicators & confluence from bar cache
+        cached = self._bar_cache.get(symbol)
+        confluence_eval = {}
+        if cached and hasattr(cached.get("df_5m"), "empty") and not cached["df_5m"].empty:
+            df_5m = cached["df_5m"]
+            bars_list = df_5m.tail(30).to_dict(orient="records")
+            confluence_eval = intraday_engine.evaluate_all_strategies(bars_list)
+
+        best = confluence_eval.get("best_strategy")
+        comp_signal = confluence_eval.get("composite_signal", "HOLD")
+
+        if best and comp_signal in ("BUY", "SELL"):
+            sig = comp_signal
+            conf = int(best.get("confidence", 85))
+            sl = float(best.get("stop_loss", price * 0.992))
+            tp1 = float(best.get("target_1", price * 1.014))
+            tp2 = float(best.get("target_2", price * 1.020))
+            cat = best.get("rationale", f"{best.get('name')} active quantitative trigger.")
+            action_desc = f"Execute {sig} on {symbol} via {best.get('name')} (Target: ₹{tp1:.2f}, SL: ₹{sl:.2f})."
+        else:
+            should_buy = (sim_odds.get("recommendation") == "EXECUTE") and (price > 0)
+            sig = "BUY" if should_buy else "HOLD"
+            conf = int(sim_odds.get("win_rate_pct", 75.0)) if should_buy else 50
+            sl = orb_plan.get("stop_loss", price * 0.992)
+            tp1 = orb_plan.get("target_1", price * 1.014)
+            tp2 = orb_plan.get("target_2", price * 1.020)
+            cat = f"ORB Strategy: Midpoint Stop ₹{sl:.2f} with {sim_odds.get('verdict', 'Neutral')}."
+            action_desc = f"Place Scalp on {symbol}." if should_buy else "Awaiting directional breakout."
+
         pred = {
             "account_id": account_id,
-            "signal": "BUY" if should_buy else "HOLD",
+            "signal": sig,
             "symbol": symbol,
-            "confidence_pct": int(sim_odds.get("win_rate_pct", 75.0)) if price > 0 else 50,
+            "confidence_pct": conf,
             "current_price_inr": price,
             "entry_zone_inr": f"{price - 1.0:.1f} - {price + 1.0:.1f}" if price > 0 else "N/A",
-            "target_1_inr": orb_plan.get("target_1", price * 1.013),
-            "target_2_inr": orb_plan.get("target_2", price * 1.020),
-            "stop_loss_inr": orb_plan.get("stop_loss", price * 0.992),
-            "risk_reward_ratio": orb_plan.get("risk_reward_ratio", "1:1.5"),
+            "target_1_inr": tp1,
+            "target_2_inr": tp2,
+            "stop_loss_inr": sl,
+            "risk_reward_ratio": "1:1.4",
             "timeframe": "5-15 Min Scalp",
-            "catalyst": f"Quantitative Setup: Midpoint Stop ₹{orb_plan.get('stop_loss', 0)} with {sim_odds.get('verdict')}.",
-            "key_risks": "Break below technical support invalidates setup.",
-            "action_summary": f"Place Quantitative Scalp on {symbol} (Expected R: {sim_odds.get('expected_value_r', 0.2)}R)." if price > 0 else "Live price required.",
+            "catalyst": cat,
+            "key_risks": "Break below protective stop loss invalidates trade.",
+            "action_summary": action_desc,
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "model": model_name,
             "tokens_used": 0,

@@ -68,6 +68,8 @@ class Account:
         self.account_id = account_id
         self.name = name
         state = db.get_account_state(account_id)
+        if state.get("account_name"):
+            self.name = state["account_name"]
         self.initial_capital = float(state.get("initial_capital", settings.INITIAL_CAPITAL_INR))
         self.available_cash = float(state.get("available_cash", settings.INITIAL_CAPITAL_INR))
         self.realized_pnl = float(state.get("total_realized_pnl", 0.0))
@@ -84,7 +86,7 @@ class Account:
             self.positions[p["symbol"]] = pos
         self.order_history: List[Dict[str, Any]] = db.get_trades(account_id, limit=50)
 
-    def calculate_budget_quantity(self, symbol: str, stock_price: float, max_alloc_pct: float = 0.35) -> int:
+    def calculate_budget_quantity(self, symbol: str, stock_price: float, max_alloc_pct: float = 0.70) -> int:
         """Calculate appropriate share quantity within available cash."""
         if stock_price <= 0 or self.available_cash <= 0:
             return 0
@@ -168,7 +170,7 @@ class PaperBroker(BaseBroker):
 
     def __init__(self):
         self.accounts: Dict[str, Account] = {
-            "gemini_flash": Account("gemini_flash", "Gemini 3.8 Flash"),
+            "gemini_flash": Account("gemini_flash", "Claude Opus 4.6 Thinking"),
             "deepseek_flash": Account("deepseek_flash", "DeepSeek Flash MaaS"),
         }
 

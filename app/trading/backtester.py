@@ -94,16 +94,18 @@ class HistoricalBacktestEngine:
     # ------------------------------------------------------------------
     # Data
     # ------------------------------------------------------------------
-    def fetch_historical_bars(self, symbols: List[str], period: str = "5d") -> Dict[str, pd.DataFrame]:
+    def fetch_historical_bars(
+        self, symbols: List[str], period: str = "5d", interval: str = "5m"
+    ) -> Dict[str, pd.DataFrame]:
         data: Dict[str, pd.DataFrame] = {}
         for sym in symbols:
             clean = sym.strip().upper()
             yf_sym = clean if ("." in clean or "^" in clean) else f"{clean}.NS"
             try:
-                df = yf.Ticker(yf_sym).history(period=period, interval="5m")
+                df = yf.Ticker(yf_sym).history(period=period, interval=interval)
                 if df.empty and yf_sym.endswith(".NS"):
                     df = yf.Ticker(yf_sym.replace(".NS", ".BO")).history(
-                        period=period, interval="5m"
+                        period=period, interval=interval
                     )
                 if df.empty:
                     continue
@@ -121,7 +123,7 @@ class HistoricalBacktestEngine:
                 df = df.reset_index(drop=True)
                 if not df.empty:
                     data[clean] = df
-                    logger.info("Loaded %d 5m bars for %s", len(df), clean)
+                    logger.info("Loaded %d %s bars for %s", len(df), interval, clean)
             except Exception as exc:
                 logger.error("Error fetching data for %s: %s", sym, exc)
         return data
@@ -210,6 +212,7 @@ Do not invent data. Do not return stop or target fields."""
         self,
         symbols: Optional[List[str]] = None,
         period: str = "5d",
+        interval: str = "5m",
         use_deepseek: bool = False,
         max_deepseek_calls: int = 15,
         time_filter: bool = True,
@@ -220,10 +223,28 @@ Do not invent data. Do not return stop or target fields."""
         validated primary edge (momentum_continuation). The secondary
         strategies are still evaluated for context but never open a position,
         because they have no positive expectancy after costs.
+
+        interval: bar size for the simulation. Defaults to "5m" (live
+        behaviour). "1h" is supported for longer-horizon tests; the strategy
+        windows and the intraday time gates scale accordingly.
         """
+        hourly = interval in ("1h", "60m", "90m")
+        # Minimum bars required for a day to be tradable. 5m sessions have 75
+        # bars; hourly sessions have 7. Scale the floor so a partial day is
+        # still skipped but a full hourly day is not.
+        min_day_bars = 3 if hourly else 5
+        # Last entry time: 5m bars can enter up to 14:45; hourly bars only have
+        # a 14:15 bar before the 15:15 close, so the cutoff moves earlier.
+        last_entry_time = "13:15" if hourly else "14:45"
+        # Midday lull filter only makes sense on intraday bars.
+        lull_start, lull_end = "11:30", "13:15"
+
         test_symbols = symbols or ["RELIANCE", "TCS", "INFY", "VEDL", "SBIN", "ICICIBANK"]
-        logger.info("Starting next-bar backtest across %d symbols over %s", len(test_symbols), period)
-        stock_data = self.fetch_historical_bars(test_symbols, period=period)
+        logger.info(
+            "Starting next-bar backtest across %d symbols over %s (%s bars)",
+            len(test_symbols), period, interval,
+        )
+        stock_data = self.fetch_historical_bars(test_symbols, period=period, interval=interval)
         if not stock_data:
             return {"error": "Failed to fetch historical market data."}
 
@@ -253,7 +274,7 @@ Do not invent data. Do not return stop or target fields."""
                 sym: df[df["date"] == date_str].reset_index(drop=True)
                 for sym, df in stock_data.items()
             }
-            day_frames = {s: d for s, d in day_frames.items() if len(d) >= 5}
+            day_frames = {s: d for s, d in day_frames.items() if len(d) >= min_day_bars}
             if not day_frames:
                 continue
 
@@ -365,9 +386,9 @@ Do not invent data. Do not return stop or target fields."""
                 # 3. Look for a new entry, filled on the NEXT bar's open.
                 if open_trade or day_locked or day_trades >= settings.MAX_TRADES_PER_DAY:
                     continue
-                if time_str >= "14:45":
+                if time_str >= last_entry_time:
                     continue
-                if time_filter and ("11:30" <= time_str <= "13:15"):
+                if time_filter and (lull_start <= time_str <= lull_end):
                     continue
 
                 candidates = []
@@ -385,6 +406,7 @@ Do not invent data. Do not return stop or target fields."""
                     eval_res = intraday_engine.evaluate_all_strategies(
                         history,
                         prev_day_ohlc=prior_day.get(sym, {}).get(date_str),
+                        interval=interval,
                     )
                     if eval_res.get("composite_signal") != "BUY":
                         continue
@@ -570,6 +592,7 @@ Do not invent data. Do not return stop or target fields."""
             "profit_factor": profit_factor,
             "max_drawdown_pct": round(max_dd, 2),
             "deepseek_queries_count": deepseek_calls,
+            "interval": interval,
             "time_filter_applied": time_filter,
             "primary_only": primary_only,
             "daily_results": daily_results,

@@ -261,6 +261,7 @@ Do not invent data. Do not return stop or target fields."""
         max_deepseek_calls: int = 15,
         time_filter: bool = True,
         primary_only: bool = True,
+        strategy_override: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         primary_only: when True (default), entries are restricted to the
@@ -271,6 +272,12 @@ Do not invent data. Do not return stop or target fields."""
         interval: bar size for the simulation. Defaults to "5m" (live
         behaviour). "1h" is supported for longer-horizon tests; the strategy
         windows and the intraday time gates scale accordingly.
+
+        strategy_override: optional callable ``(history, prev_day_ohlc,
+        interval) -> setup_dict`` used INSTEAD of the built-in suite. It lets a
+        research runner test an alternative strategy through the exact same
+        execution, sizing, fee, and AI-veto machinery. When None (the default)
+        the shipped suite is used and live behaviour is unchanged.
         """
         hourly = interval in ("1h", "60m", "90m")
         # Minimum bars required for a day to be tradable. 5m sessions have 75
@@ -447,18 +454,37 @@ Do not invent data. Do not return stop or target fields."""
                     if str(next_bar["time"]) > "15:20":
                         continue
                     history = frame.iloc[: idx + 1].to_dict(orient="records")
-                    eval_res = intraday_engine.evaluate_all_strategies(
-                        history,
-                        prev_day_ohlc=prior_day.get(sym, {}).get(date_str),
-                        interval=interval,
-                    )
-                    if eval_res.get("composite_signal") != "BUY":
-                        continue
-                    best = eval_res.get("best_strategy")
-                    if not best:
-                        continue
-                    if primary_only and best.get("strategy_id") != "momentum_continuation":
-                        continue
+                    if strategy_override is not None:
+                        # Research path: the override owns signal generation and
+                        # returns a setup dict (or None). Execution, sizing, fees
+                        # and the AI veto below are identical to the shipped path.
+                        best = strategy_override(
+                            history,
+                            prior_day.get(sym, {}).get(date_str),
+                            interval,
+                        )
+                        if not best or not best.get("active"):
+                            continue
+                        eval_res = {
+                            "indicators": {
+                                "price": float(best.get("entry_price", 0.0)),
+                                "vwap": float(best.get("vwap", 0.0) or 0.0),
+                                "or_high": float(best.get("or_high", 0.0) or 0.0),
+                            }
+                        }
+                    else:
+                        eval_res = intraday_engine.evaluate_all_strategies(
+                            history,
+                            prev_day_ohlc=prior_day.get(sym, {}).get(date_str),
+                            interval=interval,
+                        )
+                        if eval_res.get("composite_signal") != "BUY":
+                            continue
+                        best = eval_res.get("best_strategy")
+                        if not best:
+                            continue
+                        if primary_only and best.get("strategy_id") != "momentum_continuation":
+                            continue
                     entry_px = round(float(next_bar["open"]) * (1.0 + slippage), 2)
                     stop = round(float(best.get("stop_loss", entry_px * 0.992)), 2)
                     target = round(float(best.get("target_1", entry_px * 1.014)), 2)

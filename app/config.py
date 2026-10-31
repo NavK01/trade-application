@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     PAPER_SLIPPAGE_BPS: float = float(os.getenv("PAPER_SLIPPAGE_BPS", "5.0"))
     SQUARE_OFF_TIME_IST: str = os.getenv("SQUARE_OFF_TIME_IST", "15:20")
 
+    # Fee-aware entry filter. A candidate is only tradable when its expected
+    # gross move to target covers the round-trip transaction cost by at least
+    # this multiple. 1.0 disables the filter (any edge that merely breaks even
+    # after fees is allowed). Higher values demand a larger edge over costs.
+    MIN_EDGE_TO_FEE_RATIO: float = float(os.getenv("MIN_EDGE_TO_FEE_RATIO", "1.0"))
+
     # Security & Dashboard Login Authentication
     AUTH_ENABLED: bool = os.getenv("AUTH_ENABLED", "true").lower() in ("true", "1", "yes")
     ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "admin")

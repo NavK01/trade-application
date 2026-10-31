@@ -87,6 +87,28 @@ def hard_invalidation(
     return None
 
 
+def edge_to_fee_ratio(
+    entry: float,
+    target: float,
+    quantity: int,
+) -> float:
+    """Expected gross profit to target divided by round-trip transaction cost.
+
+    A ratio below 1.0 means the trade cannot pay for its own fees even if the
+    target is reached, so it has negative expectancy by construction. The
+    backtester uses this to reject fee-sink candidates before they open.
+    """
+    if entry <= 0 or target <= entry or quantity <= 0:
+        return 0.0
+    gross_edge = (target - entry) * quantity
+    buy_fee = calculate_buy_fee(entry * quantity)
+    sell_fee = calculate_sell_fee(target * quantity)
+    round_trip = buy_fee + sell_fee
+    if round_trip <= 0:
+        return float("inf")
+    return gross_edge / round_trip
+
+
 class HistoricalBacktestEngine:
     def __init__(self, initial_capital: Optional[float] = None):
         self.initial_capital = float(initial_capital or settings.INITIAL_CAPITAL_INR)
@@ -420,6 +442,23 @@ Do not invent data. Do not return stop or target fields."""
                     target = round(float(best.get("target_1", entry_px * 1.014)), 2)
                     if stop >= entry_px or target <= entry_px:
                         continue
+                    # Fee-aware gate: estimate the position size the risk model
+                    # would take and reject the candidate when its gross edge to
+                    # target cannot cover round-trip fees by the required
+                    # multiple. This is what stops the strategy from churning
+                    # fee-sink trades (e.g. GOLDBEES) that lose money after costs.
+                    est_risk_per_share = entry_px - stop
+                    if est_risk_per_share > 0:
+                        est_max_risk = day_start_equity * risk_per_trade
+                        est_max_position = day_start_equity * max_position_pct
+                        est_qty = int(min(
+                            est_max_risk / est_risk_per_share,
+                            est_max_position / entry_px,
+                        ))
+                        if est_qty > 0:
+                            ratio = edge_to_fee_ratio(entry_px, target, est_qty)
+                            if ratio < settings.MIN_EDGE_TO_FEE_RATIO:
+                                continue
                     candidates.append({
                         "symbol": sym,
                         "setup": best,

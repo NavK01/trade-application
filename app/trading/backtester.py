@@ -109,6 +109,28 @@ def edge_to_fee_ratio(
     return gross_edge / round_trip
 
 
+def fee_to_risk_pct(
+    entry: float,
+    stop: float,
+    quantity: int,
+) -> float:
+    """Round-trip transaction cost as a percentage of the rupee risk budget.
+
+    The risk budget is (entry - stop) * quantity, i.e. the money the stop can
+    lose. When fees are a large fraction of that budget the trade is a fee sink:
+    the position is too small (or the stop too tight) for the fixed cost to be
+    amortised. Returns 100.0 when there is no risk budget (invalid setup).
+    """
+    if entry <= 0 or stop >= entry or quantity <= 0:
+        return 100.0
+    risk_inr = (entry - stop) * quantity
+    if risk_inr <= 0:
+        return 100.0
+    buy_fee = calculate_buy_fee(entry * quantity)
+    sell_fee = calculate_sell_fee(entry * quantity)
+    return (buy_fee + sell_fee) / risk_inr * 100.0
+
+
 class HistoricalBacktestEngine:
     def __init__(self, initial_capital: Optional[float] = None):
         self.initial_capital = float(initial_capital or settings.INITIAL_CAPITAL_INR)
@@ -458,6 +480,9 @@ Do not invent data. Do not return stop or target fields."""
                         if est_qty > 0:
                             ratio = edge_to_fee_ratio(entry_px, target, est_qty)
                             if ratio < settings.MIN_EDGE_TO_FEE_RATIO:
+                                continue
+                            fee_risk = fee_to_risk_pct(entry_px, stop, est_qty)
+                            if fee_risk > settings.MAX_FEE_TO_RISK_PCT:
                                 continue
                     candidates.append({
                         "symbol": sym,

@@ -1,9 +1,9 @@
-"""Fee-aware filter sweep (Iteration 19).
+"""Fee-to-risk filter sweep (Iteration 19).
 
 Re-runs the 1-year hourly backtest on the restricted universe at several
-MIN_EDGE_TO_FEE_RATIO values to find the threshold that turns the strategy
-net-positive after fees. Ratio 1.0 is the iter18 baseline (filter effectively
-off for any trade that at least breaks even on fees).
+MAX_FEE_TO_RISK_PCT values. The gate rejects candidates whose round-trip
+fee exceeds that percentage of the rupee risk budget (entry-stop)*qty.
+100.0 is the iter18 baseline (filter off).
 """
 
 import asyncio
@@ -20,7 +20,7 @@ UNIVERSE = [
     "GOLDBEES.NS", "SBIN.NS", "TATASTEEL.NS", "TATAPOWER.NS", "RELIANCE.NS",
 ]
 
-RATIOS = [1.0, 1.5, 2.0, 2.5, 3.0, 4.0]
+THRESHOLDS = [100.0, 40.0, 30.0, 25.0, 20.0, 15.0, 10.0]
 
 
 def _per_symbol(trades):
@@ -35,17 +35,17 @@ def _per_symbol(trades):
 
 async def main():
     rows = []
-    for ratio in RATIOS:
-        settings.MIN_EDGE_TO_FEE_RATIO = ratio
+    for thr in THRESHOLDS:
+        settings.MAX_FEE_TO_RISK_PCT = thr
         res = await backtest_engine.run_backtest(
             symbols=UNIVERSE, period="1y", interval="1h",
             use_deepseek=False, time_filter=True, primary_only=True,
         )
         if res.get("error"):
-            print(f"ratio={ratio}: ERROR {res['error']}")
+            print(f"thr={thr}: ERROR {res['error']}")
             continue
         row = {
-            "ratio": ratio,
+            "max_fee_to_risk_pct": thr,
             "trades": res["total_trades"],
             "win_rate": res["win_rate_pct"],
             "gross": res["gross_pnl_inr"],
@@ -58,7 +58,7 @@ async def main():
         }
         rows.append(row)
         print(
-            f"ratio={ratio:<4} trades={row['trades']:>3} win={row['win_rate']:>5}% "
+            f"thr={thr:<6} trades={row['trades']:>3} win={row['win_rate']:>5}% "
             f"gross={row['gross']:>9.2f} fees={row['fees']:>8.2f} net={row['net']:>9.2f} "
             f"({row['net_pct']:>6}%) pf={row['pf']:>5} dd={row['max_dd']:>5}%"
         )
@@ -67,10 +67,13 @@ async def main():
         json.dump(rows, f, indent=2)
     print("\nSaved trading_workspace/iteration19_fee_sweep.json")
 
-    print("\nPer-symbol net P&L by ratio:")
+    print("\nPer-symbol net P&L by threshold:")
     for row in rows:
-        syms = ", ".join(f"{s}:{b['net']:+.0f}" for s, b in sorted(row["per_symbol"].items(), key=lambda kv: kv[1]["net"]))
-        print(f"  ratio={row['ratio']:<4} {syms}")
+        syms = ", ".join(
+            f"{s}:{b['net']:+.0f}"
+            for s, b in sorted(row["per_symbol"].items(), key=lambda kv: kv[1]["net"])
+        )
+        print(f"  thr={row['max_fee_to_risk_pct']:<6} {syms}")
 
 
 if __name__ == "__main__":

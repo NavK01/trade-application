@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     # after fees is allowed). Higher values demand a larger edge over costs.
     MIN_EDGE_TO_FEE_RATIO: float = float(os.getenv("MIN_EDGE_TO_FEE_RATIO", "1.0"))
 
+    # Fee-to-risk ceiling. Reject a candidate when round-trip transaction cost
+    # exceeds this percentage of the rupee risk budget (entry-stop)*qty. Small
+    # positions and tight stops cannot amortise the fixed cost, so they are fee
+    # sinks. 100.0 disables the filter.
+    MAX_FEE_TO_RISK_PCT: float = float(os.getenv("MAX_FEE_TO_RISK_PCT", "100.0"))
+
     # Security & Dashboard Login Authentication
     AUTH_ENABLED: bool = os.getenv("AUTH_ENABLED", "true").lower() in ("true", "1", "yes")
     ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "admin")

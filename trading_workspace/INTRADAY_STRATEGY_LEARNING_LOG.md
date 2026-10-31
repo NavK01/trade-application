@@ -2267,3 +2267,55 @@ This persistent document tracks the iterative backtesting, quantitative metrics,
 | **VWAP Institutional Bounce** | ICICIBANK | 2026-10-28 10:35 | TARGET_HIT | **+₹14.33** | WON | Dynamic VWAP bounce with volume confirmation; hit Target 1 at 12:25 IST |
 
 ---
+
+---
+
+## Iteration 22 — FAROM: Fee-Aware Opening-Range Momentum (last week, 5m, with AI)
+
+**Motivation.** The 1-year hourly validation of the shipped primary edge
+(`momentum_continuation`) was honest but negative: 59 trades, 39.0% win,
+gross +₹349.11, fees ₹501.06, net -₹151.95. Realized per-trade move averaged
++0.06% (median 0.00%) against a ~0.106% round-trip fee floor, and fees ate 86%
+of gross P&L. The entry signal finds real momentum; the **exit** (hold to close)
+and the **cost structure** are what destroy the edge.
+
+**New strategy — `app/trading/farom_strategy.py`.** Keeps the already-validated
+entry geometry (first-hour bullish bias + opening-range breakout + OR-midpoint
+stop) and fixes the two measured defects:
+1. **Fee-clearing take-profit** instead of hold-to-close. Target = max(1.6R,
+   1.2% of price), so a winner is a real win, not a fee sink.
+2. **Minimum opening-range width** (0.4% of price). Narrow ranges cannot
+   produce a fee-clearing target, so they are skipped.
+3. **In-geometry edge-to-fee gate**: the target must clear round-trip fees by
+   \u2265 2.0x at the position size the risk model would actually take.
+
+**Harness.** `backtester.run_backtest` gained an optional `strategy_override`
+hook so a research strategy runs through the identical execution, sizing, fee,
+and AI-veto machinery. Default `None` leaves live behaviour unchanged
+(regression-checked: the 1y/1h shipped run still returns 52 trades, 42.3% win,
++₹71.12, PF 1.07, DD 3.87%).
+
+**Test window.** Last week = 2026-10-26 .. 2026-10-30 (5 sessions, 5-minute
+bars), restricted universe (Sensex, Nifty, Bank Nifty, GOLDBEES, SBIN,
+TATASTEEL, TATAPOWER, RELIANCE). Three arms, identical window/universe:
+
+| Arm | Trades | Win% | Gross | Fees | Net (pre-AI) | PF | Max DD |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A. shipped, no AI | 5 | 60.0 | +128.07 | 46.34 | **+81.73** | 1.93 | 0.72% |
+| B. shipped, AI veto | 5 | 60.0 | +128.07 | 46.34 | **+81.73** | 1.93 | 0.72% |
+| C. **FAROM, AI veto** | 6 | **83.3** | +201.72 | 54.99 | **+146.73** | **3.04** | 0.71% |
+
+**AI behaviour.** 15 DeepSeek calls per AI arm (₹0.15-0.18 total). Every
+executed trade is marked `validated_by_deepseek`. No hard-invalidation vetoes
+fired on this window, so the AI did not change the trade set — it confirmed it.
+
+**Findings.**
+- FAROM beat the shipped edge on the same window: +₹65 more net (+1.47% vs
+  +0.82%), higher win rate (83.3% vs 60.0%), and a much stronger profit factor
+  (3.04 vs 1.93) at the same drawdown.
+- The improvement comes from the exit, not the entry: FAROM's TATAPOWER trade
+  banked a `TARGET_HIT` (+₹102.90) where the shipped hold-to-close version
+  gave back part of the move, and FAROM added a second SBIN entry (+₹39.53).
+- Caveat: 5 sessions is a small sample. This is a promising, mechanism-driven
+  result, not proof. The next honest step is a 1-year hourly FAROM run to see
+  whether the fee-clearing exit holds up out of sample.

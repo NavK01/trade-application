@@ -1,5 +1,5 @@
 """
-Gemini Chatbot Package.
+Quant Chatbot Package.
 Provides conversational AI grounded with real-time Google Search and live market/portfolio execution.
 """
 

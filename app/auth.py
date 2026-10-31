@@ -1,5 +1,5 @@
 """
-Authentication & Access Control Module for Gemini Quant Platform.
+Authentication & Access Control Module for the Quant Platform.
 Protects the web dashboard and REST/WebSocket APIs with secure session tokens.
 """
 

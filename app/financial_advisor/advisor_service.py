@@ -1,13 +1,14 @@
 """
 Financial Advisor Multi-Agent Coordination Service for the Indian Stock Market.
-Uses Google Gemini models with live NSE/BSE market intelligence and web search grounding.
+Uses DeepSeek 4.1 Flash or Claude Opus 4.6 with live NSE/BSE market intelligence.
 """
 
 import datetime
 from typing import Dict, Any, Optional
-from google.genai import types
 
-from app.config import settings, create_genai_client
+from app.config import settings
+from app.system.llm import account_for_model, generate_text
+from app.system.tokens import token_tracker
 from app.financial_advisor.india_market import (
     get_indian_stock_quote,
     get_indian_market_indices,
@@ -40,16 +41,11 @@ async def run_financial_advisor_pipeline(
     """
     Execute the multi-agent financial advisor pipeline for any Indian stock.
     Gathers live NSE/BSE quote, benchmark indices, and real-time news,
-    then prompts Gemini to deliver a comprehensive, structured advisory plan.
+    then asks the configured model for a structured advisory plan.
     """
-    api_key = settings.GEMINI_API_KEY
-    if not api_key:
-        return {
-            "error": "GEMINI_API_KEY is not configured. Please set your API key in .env to use the Financial Advisor.",
-            "success": False
-        }
-
-    selected_model = model or settings.GEMINI_AGENT_MODEL
+    selected_model = model or settings.DEEPSEEK_MODEL
+    if selected_model not in (settings.DEEPSEEK_MODEL, settings.OPUS_MODEL):
+        selected_model = settings.DEEPSEEK_MODEL
 
     # Step 1: Fetch Live Indian Market Quote
     quote = get_indian_stock_quote(symbol)
@@ -65,9 +61,7 @@ async def run_financial_advisor_pipeline(
     # Step 3: Fetch Real-Time News via Live Search
     news = search_indian_market_news(f"{symbol} quarterly results stock news NSE", max_results=4)
 
-    # Step 4: Synthesize through Gemini Model
-    client = create_genai_client(api_key)
-
+    # Step 4: Synthesize through the configured model
     user_prompt = f"""
 Please generate a comprehensive Indian Financial Advisory Report for the following stock:
 
@@ -94,19 +88,24 @@ Please generate a comprehensive Indian Financial Advisory Report for the followi
 Please coordinate the 4 expert sub-agent analyses (Data Analyst, Trading Analyst, Execution Analyst, Risk Analyst) into a cohesive, professional markdown advisory report.
 """
 
-    config = types.GenerateContentConfig(
-        system_instruction=INDIAN_COORDINATOR_SYSTEM_PROMPT,
-        temperature=0.3,
-    )
-
     try:
-        response = await client.aio.models.generate_content(
+        result = await generate_text(
+            user_prompt,
             model=selected_model,
-            contents=user_prompt,
-            config=config,
+            system_instruction=INDIAN_COORDINATOR_SYSTEM_PROMPT,
+            temperature=0.3,
+            max_output_tokens=1200,
+            timeout=90.0,
         )
-
-        report_markdown = response.text or "No report content generated."
+        report_markdown = result["text"]
+        selected_model = result["model"]
+        token_tracker.log_usage(
+            "financial_advisor",
+            selected_model,
+            int(result.get("prompt_tokens", 0)),
+            int(result.get("completion_tokens", 0)),
+            account_id=account_for_model(selected_model),
+        )
 
         return {
             "symbol": quote["symbol"],

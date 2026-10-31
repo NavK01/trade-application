@@ -61,17 +61,17 @@ def run_tests():
     print("\n3. Checking App Configuration & Models...")
     try:
         from app.config import settings
-        key_set = bool(settings.GEMINI_API_KEY and not settings.GEMINI_API_KEY.startswith("your_"))
-        print(f"   - Agent Model: {settings.GEMINI_AGENT_MODEL}")
-        print(f"   - Live Model:  {settings.GEMINI_LIVE_MODEL}")
-        print(f"   - Voice:       {settings.GEMINI_VOICE_NAME}")
-        print(f"   - API Key:     {'Configured ✓' if key_set else 'NOT SET (check .env)'}")
-        
+        key_set = bool(settings.DEEPSEEK_API_KEY and not settings.DEEPSEEK_API_KEY.startswith("your_"))
+        print(f"   - Primary Model:  {settings.DEEPSEEK_MODEL}")
+        print(f"   - Benchmark:      {settings.OPUS_MODEL}")
+        print(f"   - Trading Mode:   {settings.TRADING_MODE}")
+        print(f"   - API Key:        {'Configured OK' if key_set else 'NOT SET (check .env)'}")
+
         if key_set:
-            print("   [PASS] Configuration loaded and API key is present.")
+            print("   [PASS] Configuration loaded and DeepSeek API key is present.")
             passed += 1
         else:
-            print("   [WARN] API key is missing in .env. Voice and Agent require GEMINI_API_KEY.")
+            print("   [WARN] DEEPSEEK_API_KEY is missing in .env. AI prediction requires it.")
     except Exception as e:
         print(f"   [FAIL] Configuration error: {e}")
 
@@ -123,7 +123,7 @@ def run_tests():
             "/api/chat",
             "/api/agent/run",
             "/api/financial-advisor/quote",
-            "/ws/live",
+            "/ws/predictor",
             "/ws/agent/{task_id}"
         ]
         all_found = all(any(r.startswith(ep.split("{")[0]) for r in routes) for ep in expected)
@@ -136,21 +136,20 @@ def run_tests():
     except Exception as e:
         print(f"   [FAIL] FastAPI app error: {e}")
 
-    # Test 7: Gemini Chatbot Module with Google Search Grounding
+    # Test 7: Chatbot Module & LLM Backend
     total += 1
-    print("\n7. Checking Gemini Chatbot Module & Google Search Grounding...")
+    print("\n7. Checking Chatbot Module & LLM Backend...")
     try:
         from app.chatbot import chatbot_service, process_chat_message, ChatbotRequest
-        from google.genai import types
-        # Check Tool and GoogleSearch types
-        has_search_tool = hasattr(types, "GoogleSearch") and hasattr(types, "Tool")
-        if has_search_tool and chatbot_service:
+        from app.system import llm
+        has_helpers = all(hasattr(llm, fn) for fn in ("generate_text", "extract_json_object"))
+        if has_helpers and chatbot_service:
             print("   - Chatbot Service: Loaded successfully")
-            print("   - Built-in Google Search Tool: types.GoogleSearch available ✓")
-            print("   [PASS] app/chatbot configured with Google Search grounding.")
+            print("   - LLM Backend: DeepSeek Flash MaaS (primary) + Claude Opus (benchmark)")
+            print("   [PASS] app/chatbot configured with the DeepSeek/Opus backend.")
             passed += 1
         else:
-            print("   [FAIL] GoogleSearch tool not found in google.genai.types.")
+            print("   [FAIL] LLM helper functions not found in app.system.llm.")
     except Exception as e:
         print(f"   [FAIL] Chatbot initialization error: {e}")
 

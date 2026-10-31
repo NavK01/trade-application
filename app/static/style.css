@@ -62,7 +62,7 @@ body {
   gap: 10px;
 }
 
-.logo-gemini {
+.logo-quant {
   font-size: 24px;
   color: var(--accent-cyan);
   text-shadow: 0 0 12px rgba(6, 182, 212, 0.7);
@@ -1139,7 +1139,7 @@ textarea#agent-prompt {
   gap: 8px;
 }
 
-.gemini-card {
+.opus-card {
   border-left: 3px solid var(--accent-purple);
 }
 
@@ -1169,7 +1169,7 @@ textarea#agent-prompt {
   display: inline-block;
 }
 
-.dot-gemini {
+.dot-opus {
   background: #a855f7;
   box-shadow: 0 0 8px #a855f7;
 }

@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional, Callable
 from google.genai import types
 
 from app.config import settings, create_genai_client
+from app.system.tokens import token_tracker
 from app.agent.prompt import AGENT_SYSTEM_PROMPT
 from app.agent.tools import (
     execute_bash,
@@ -18,7 +19,7 @@ from app.agent.tools import (
     search_indian_market_news,
 )
 
-# Registry of tools available to the Gemini Agent
+# Registry of tools available to the coding agent
 TOOL_FUNCTIONS: Dict[str, Callable] = {
     "execute_bash": execute_bash,
     "read_file": read_file,
@@ -30,7 +31,7 @@ TOOL_FUNCTIONS: Dict[str, Callable] = {
     "search_indian_market_news": search_indian_market_news,
 }
 
-# The list of tool functions passed to Gemini Client
+# The list of tool functions passed to the DeepSeek client
 TOOLS_LIST = [
     execute_bash,
     read_file,
@@ -122,7 +123,11 @@ class TradingAgentManager:
 
     async def start_task(self, prompt: str, model: Optional[str] = None) -> AgentTask:
         task_id = str(uuid.uuid4())[:8]
-        selected_model = model or settings.GEMINI_AGENT_MODEL
+        selected_model = model or settings.DEEPSEEK_MODEL
+        if "claude" in selected_model.lower():
+            # The tool-calling loop uses the GenAI function-calling API, which
+            # is available on DeepSeek. Opus runs through a separate local CLI.
+            selected_model = settings.DEEPSEEK_MODEL
         task = AgentTask(task_id, prompt, selected_model)
         self.tasks[task_id] = task
 
@@ -131,15 +136,15 @@ class TradingAgentManager:
         return task
 
     async def _run_agent_loop(self, task: AgentTask):
-        api_key = settings.GEMINI_API_KEY
-        if not api_key:
+        api_key = settings.DEEPSEEK_API_KEY
+        if not api_key or api_key.startswith("your_"):
             task.status = "failed"
-            task.error = "GEMINI_API_KEY is not set. Please set it in your .env file or environment."
+            task.error = "DEEPSEEK_API_KEY is not set. Configure it in .env to use the coding agent."
             task.add_event("error", task.error)
             task.end_time = datetime.datetime.now(datetime.timezone.utc).isoformat()
             return
 
-        client = create_genai_client(api_key)
+        client = create_genai_client(api_key, location="global")
         task.add_event("started", f"Autonomous Trading Agent initiated with model {task.model}.")
 
         contents: List[types.Content] = [
@@ -168,12 +173,22 @@ class TradingAgentManager:
                 step += 1
                 task.add_event("step_start", f"Step {step}/{max_steps}: Analyzing and reasoning...")
 
-                # Call Gemini model
+                # Call DeepSeek model
                 response = await client.aio.models.generate_content(
                     model=task.model,
                     contents=contents,
                     config=config,
                 )
+
+                usage = getattr(response, "usage_metadata", None)
+                if usage:
+                    token_tracker.log_usage(
+                        "trading_agent",
+                        task.model,
+                        int(getattr(usage, "prompt_token_count", 0) or 0),
+                        int(getattr(usage, "candidates_token_count", 0) or 0),
+                        account_id="deepseek_flash",
+                    )
 
                 if not response.candidates:
                     task.add_event("warning", "Model returned no candidates.")

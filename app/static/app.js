@@ -1,5 +1,5 @@
-// Gemini Quant Terminal & Dual Agent Arena Controller
-// Manages TradingView Lightweight Charts, Dynamic Stock Scanner, Gemini vs DeepSeek Arena, and Live Voice
+// Quant Trading Terminal & Dual Agent Arena Controller
+// Manages TradingView Lightweight Charts, dynamic scanner, Claude Opus vs DeepSeek arena.
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -22,21 +22,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCloseModal = document.getElementById('btn-close-modal');
   const btnGotIt = document.getElementById('btn-got-it');
 
-  // --- Dual Arena Cards (Gemini vs DeepSeek) ---
-  const geminiCash = document.getElementById('gemini-cash');
-  const geminiPnl = document.getElementById('gemini-pnl');
-  const geminiWinrate = document.getElementById('gemini-winrate');
-  const geminiSignal = document.getElementById('gemini-signal');
-  const geminiSym = document.getElementById('gemini-sym');
-  const geminiConf = document.getElementById('gemini-conf');
-  const geminiEntry = document.getElementById('gemini-entry');
-  const geminiTarget = document.getElementById('gemini-target');
-  const geminiStop = document.getElementById('gemini-stop');
-  const geminiRr = document.getElementById('gemini-rr');
-  const geminiCatalyst = document.getElementById('gemini-catalyst');
-  const toggleAutoGemini = document.getElementById('toggle-auto-gemini');
-  const geminiPositionsCount = document.getElementById('gemini-positions-count');
-  const geminiModelBadge = document.getElementById('gemini-model-badge');
+  // --- Dual Arena Cards (Claude Opus vs DeepSeek) ---
+  const opusCash = document.getElementById('opus-cash');
+  const opusPnl = document.getElementById('opus-pnl');
+  const opusWinrate = document.getElementById('opus-winrate');
+  const opusSignal = document.getElementById('opus-signal');
+  const opusSym = document.getElementById('opus-sym');
+  const opusConf = document.getElementById('opus-conf');
+  const opusEntry = document.getElementById('opus-entry');
+  const opusTarget = document.getElementById('opus-target');
+  const opusStop = document.getElementById('opus-stop');
+  const opusRr = document.getElementById('opus-rr');
+  const opusCatalyst = document.getElementById('opus-catalyst');
+  const toggleAutoOpus = document.getElementById('toggle-auto-opus');
+  const opusPositionsCount = document.getElementById('opus-positions-count');
+  const opusModelBadge = document.getElementById('opus-model-badge');
 
   const deepseekCash = document.getElementById('deepseek-cash');
   const deepseekPnl = document.getElementById('deepseek-pnl');
@@ -83,17 +83,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const ordersTbody = document.getElementById('orders-tbody');
   const learningContainer = document.getElementById('learning-container');
 
-  // --- Chatbot & Voice ---
+  // --- Chatbot & Token Metrics ---
   const chatMessages = document.getElementById('chat-messages');
   const chatInput = document.getElementById('chat-input');
   const btnSendChat = document.getElementById('btn-send-chat');
   const chatSearchToggle = document.getElementById('chat-search-toggle');
   const chatModelSelect = document.getElementById('chat-model-select');
-  const btnToggleLive = document.getElementById('btn-toggle-live');
-  const btnLiveIcon = document.getElementById('btn-live-icon');
-  const btnLiveText = document.getElementById('btn-live-text');
-  const btnToggleMic = document.getElementById('btn-toggle-mic');
-  const visualizerCanvas = document.getElementById('visualizer');
   const tokensCount = document.getElementById('tokens-count');
   const tokensCost = document.getElementById('tokens-cost');
   const tokensTradingPnl = document.getElementById('tokens-trading-pnl');
@@ -110,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnLogout = document.getElementById('btn-logout');
 
   // --- State Variables ---
-  let authToken = localStorage.getItem('gemini_auth_token') || '';
+  let authToken = localStorage.getItem('quant_auth_token') || '';
   let activeChartSymbol = 'SBIN';
   let activeTimeframe = '5m';
   let activePeriod = '5d';
@@ -202,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await res.json();
         if (data.success && data.token) {
           authToken = data.token;
-          localStorage.setItem('gemini_auth_token', authToken);
+          localStorage.setItem('quant_auth_token', authToken);
           hideLoginModal();
           initAll();
         } else {
@@ -220,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnLogout.addEventListener('click', async () => {
       try { await fetch('/api/auth/logout', { method: 'POST' }); } catch(e){}
       authToken = '';
-      localStorage.removeItem('gemini_auth_token');
+      localStorage.removeItem('quant_auth_token');
       showLoginModal('Signed out.');
     });
   }
@@ -399,19 +394,19 @@ document.addEventListener('DOMContentLoaded', () => {
       leaderText.textContent = a.leader_statement;
     }
 
-    // Account A: Gemini 3.8 Flash
-    const g = a.gemini;
+    // Account A: Claude Opus 4.6 Thinking
+    const g = a.opus;
     if (g) {
-      if (geminiCash) geminiCash.textContent = `₹ ${g.available_cash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-      if (geminiPnl) {
+      if (opusCash) opusCash.textContent = `₹ ${g.available_cash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      if (opusPnl) {
         const cls = g.realized_pnl >= 0 ? 'val-green' : 'val-red';
         const sign = g.realized_pnl >= 0 ? '+' : '';
-        geminiPnl.className = cls;
-        geminiPnl.textContent = `₹ ${sign}${g.realized_pnl.toFixed(2)} (${sign}${g.roc_percent}%)`;
+        opusPnl.className = cls;
+        opusPnl.textContent = `₹ ${sign}${g.realized_pnl.toFixed(2)} (${sign}${g.roc_percent}%)`;
       }
-      if (geminiWinrate) geminiWinrate.textContent = `${g.win_rate_pct}% (${g.winning_trades}/${g.closed_trades})`;
-      if (geminiPositionsCount) geminiPositionsCount.textContent = `${(g.open_positions || []).length} Open`;
-      if (toggleAutoGemini) toggleAutoGemini.checked = g.auto_execute;
+      if (opusWinrate) opusWinrate.textContent = `${g.win_rate_pct}% (${g.winning_trades}/${g.closed_trades})`;
+      if (opusPositionsCount) opusPositionsCount.textContent = `${(g.open_positions || []).length} Open`;
+      if (toggleAutoOpus) toggleAutoOpus.checked = g.auto_execute;
     }
 
     // Account B: DeepSeek Flash MaaS
@@ -429,18 +424,18 @@ document.addEventListener('DOMContentLoaded', () => {
       if (toggleAutoDeepseek) toggleAutoDeepseek.checked = d.auto_execute;
     }
 
-    // Gemini / Opus Prediction Card
-    if (data.gemini_prediction) {
-      renderPredictionCard(data.gemini_prediction, {
-        signal: geminiSignal,
-        sym: geminiSym,
-        conf: geminiConf,
-        entry: geminiEntry,
-        target: geminiTarget,
-        stop: geminiStop,
-        rr: geminiRr,
-        catalyst: geminiCatalyst,
-        modelBadge: geminiModelBadge,
+    // Claude Opus Prediction Card
+    if (data.opus_prediction) {
+      renderPredictionCard(data.opus_prediction, {
+        signal: opusSignal,
+        sym: opusSym,
+        conf: opusConf,
+        entry: opusEntry,
+        target: opusTarget,
+        stop: opusStop,
+        rr: opusRr,
+        catalyst: opusCatalyst,
+        modelBadge: opusModelBadge,
       });
     }
 
@@ -486,9 +481,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Auto-execute toggles
-  if (toggleAutoGemini) {
-    toggleAutoGemini.addEventListener('change', async () => {
-      await fetch(`/api/trading/auto-toggle?account_id=gemini_flash&enabled=${toggleAutoGemini.checked}`, { method: 'POST' });
+  if (toggleAutoOpus) {
+    toggleAutoOpus.addEventListener('change', async () => {
+      await fetch(`/api/trading/auto-toggle?account_id=opus_flash&enabled=${toggleAutoOpus.checked}`, { method: 'POST' });
     });
   }
   if (toggleAutoDeepseek) {
@@ -507,11 +502,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await res.json();
         renderArena({
           arena: data.arena,
-          gemini_prediction: data.gemini_prediction,
+          opus_prediction: data.opus_prediction,
           deepseek_prediction: data.deepseek_prediction,
           next_run_timestamp: data.next_run_timestamp,
         });
-        appendChatMessage('System', `⚔️ AI Arena cycle executed on ${activeChartSymbol}: Claude Opus [${data.gemini_prediction.signal} ${data.gemini_prediction.confidence_pct}%] vs DeepSeek [${data.deepseek_prediction.signal} ${data.deepseek_prediction.confidence_pct}%]`, 'system');
+        appendChatMessage('System', `⚔️ AI Arena cycle executed on ${activeChartSymbol}: Claude Opus [${data.opus_prediction.signal} ${data.opus_prediction.confidence_pct}%] vs DeepSeek [${data.deepseek_prediction.signal} ${data.deepseek_prediction.confidence_pct}%]`, 'system');
       } catch (e) {
         console.error('Arena trigger error:', e);
       } finally {
@@ -599,16 +594,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // -------------------------------------------------------------
   async function loadPositionsAndOrders() {
     try {
-      // 1. Load Gemini & DeepSeek positions
+      // 1. Load Claude Opus & DeepSeek positions
       const [gRes, dRes] = await Promise.all([
-        fetch('/api/trading/portfolio?account_id=gemini_flash'),
+        fetch('/api/trading/portfolio?account_id=opus_flash'),
         fetch('/api/trading/portfolio?account_id=deepseek_flash')
       ]);
       const gData = await gRes.json();
       const dData = await dRes.json();
 
       const allPositions = [
-        ...(gData.positions || []).map(p => ({ ...p, account_id: 'gemini_flash', agent_name: 'Claude Opus 4.6 Thinking' })),
+        ...(gData.positions || []).map(p => ({ ...p, account_id: 'opus_flash', agent_name: 'Claude Opus 4.6 Thinking' })),
         ...(dData.positions || []).map(p => ({ ...p, account_id: 'deepseek_flash', agent_name: 'DeepSeek Flash MaaS' }))
       ];
 
@@ -639,14 +634,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     positionsTbody.innerHTML = '';
     filtered.forEach(pos => {
-      const isGemini = pos.account_id === 'gemini_flash';
-      const agentBadgeCls = isGemini ? 'badge-accent' : 'badge-done';
+      const isOpus = pos.account_id === 'opus_flash';
+      const agentBadgeCls = isOpus ? 'badge-accent' : 'badge-done';
       const pnlCls = pos.unrealized_pnl >= 0 ? 'val-green' : 'val-red';
       const sign = pos.unrealized_pnl >= 0 ? '+' : '';
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><span class="badge ${agentBadgeCls}">${isGemini ? 'Claude Opus' : 'DeepSeek'}</span></td>
+        <td><span class="badge ${agentBadgeCls}">${isOpus ? 'Claude Opus' : 'DeepSeek'}</span></td>
         <td><strong>${pos.symbol}</strong></td>
         <td>${pos.quantity}</td>
         <td>₹ ${pos.avg_price}</td>
@@ -688,14 +683,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     ordersTbody.innerHTML = '';
     orders.slice(0, 30).forEach(o => {
-      const isGemini = o.account_id === 'gemini_flash';
+      const isOpus = o.account_id === 'opus_flash';
       const isBuy = o.action === 'BUY';
       const timeStr = o.timestamp ? new Date(o.timestamp).toLocaleTimeString() : '--';
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${timeStr}</td>
-        <td><span class="badge ${isGemini ? 'badge-accent' : 'badge-done'}">${isGemini ? 'Claude Opus' : 'DeepSeek'}</span></td>
+        <td><span class="badge ${isOpus ? 'badge-accent' : 'badge-done'}">${isOpus ? 'Claude Opus' : 'DeepSeek'}</span></td>
         <td><strong>${o.symbol}</strong></td>
         <td class="${isBuy ? 'val-green' : 'val-red'}"><strong>${o.action}</strong></td>
         <td>${o.quantity}</td>
@@ -707,7 +702,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Filter chips for positions (All, Gemini, DeepSeek)
+  // Filter chips for positions (All, Claude Opus, DeepSeek)
   document.querySelectorAll('.chip-filter').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.chip-filter').forEach(b => b.classList.remove('active'));
@@ -742,7 +737,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function executeOrder(action) {
     const symbol = (orderSymbolInput.value || activeChartSymbol).trim().toUpperCase();
     const quantity = parseInt(fastQty.value) || 1;
-    const account_id = orderAccountSelect.value || 'gemini_flash';
+    const account_id = orderAccountSelect.value || 'opus_flash';
 
     if (latencyTag) latencyTag.textContent = 'Executing...';
     btnFastBuy.disabled = true;
@@ -821,8 +816,10 @@ document.addEventListener('DOMContentLoaded', () => {
           body: JSON.stringify({ symbols: ['RELIANCE', 'TCS', 'INFY', 'VEDL', 'SBIN', 'ICICIBANK'], period: '5d', use_deepseek: true, time_filter: true })
         });
         const data = await res.json();
-        const pnlStr = (data.net_pnl_inr >= 0 ? '+' : '') + '₹' + data.net_pnl_inr.toFixed(2);
-        appendChatMessage('DeepSeek Quant', `✅ Backtest Complete: ${data.total_trades} Trades | Win Rate: ${data.win_rate_pct}% | Profit Factor: ${data.profit_factor} | Net P&L: ${pnlStr} | Max Drawdown: ${data.max_drawdown_pct}% | Top Strategy: ORB-15m (100% win rate).`, 'bot');
+        const net = Number(data.net_pnl_after_ai_inr ?? data.net_pnl_inr ?? 0);
+        const pnlStr = (net >= 0 ? '+' : '') + '₹' + net.toFixed(2);
+        const top = data.top_strategy ? ` | Top Strategy: ${data.top_strategy}` : '';
+        appendChatMessage('DeepSeek Quant', `✅ Backtest Complete: ${data.total_trades} Trades | Win Rate: ${data.win_rate_pct}% | Profit Factor: ${data.profit_factor} | Net after AI: ${pnlStr} | Max Drawdown: ${data.max_drawdown_pct}%${top}`, 'bot');
         await loadLearningLogs();
       } catch (e) {
         console.error('Backtest error:', e);
@@ -873,7 +870,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tokensCount.title = `Input: ${(data.today_prompt_tokens || 0).toLocaleString()} / 10M | Output: ${(data.today_completion_tokens || 0).toLocaleString()} / 500K`;
       }
       if (tokensCost) tokensCost.textContent = `₹ ${(data.estimated_ai_cost_inr || 0).toFixed(2)}`;
-      if (tokensTradingPnl) tokensTradingPnl.textContent = `₹ ${(data.realized_trading_pnl_inr || 0).toFixed(2)}`;
+      if (tokensTradingPnl) tokensTradingPnl.textContent = `₹ ${(data.gross_trading_pnl_inr || 0).toFixed(2)}`;
     } catch(e){}
   }
 

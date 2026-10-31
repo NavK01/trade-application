@@ -1,4 +1,4 @@
 """
-Skills package for Gemini Quant Platform.
+Skills package for the Quant Platform.
 """
 

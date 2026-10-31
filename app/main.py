@@ -10,9 +10,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from app.config import settings, BASE_DIR
+from app.config import ACCOUNT_IDS, DEFAULT_ACCOUNT_ID, settings, BASE_DIR
 from app.agent.trading_agent import agent_manager
-from app.live.live_session import handle_live_websocket
 from app.agent.tools import read_file, write_file, list_files
 from app.financial_advisor.advisor_service import run_financial_advisor_pipeline
 from app.financial_advisor.india_market import (
@@ -77,9 +76,9 @@ async def lifespan(app: FastAPI):
     logger.info("Stopped background services.")
 
 app = FastAPI(
-    title="Gemini Quant Agent & Fast Trading Platform",
-    description="High-Speed Indian Stock Market Execution, 5-Minute Argon AI Predictions, and Multimodal Live Voice Bridge",
-    version="1.1.0",
+    title="Opus/DeepSeek Quant Trading Platform",
+    description="Indian equity paper trading with Claude Opus 4.6 and DeepSeek 4.1 Flash",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -113,11 +112,14 @@ class FastOrderRequest(BaseModel):
     quantity: int
     order_type: Optional[str] = "MARKET"
     limit_price: Optional[float] = None
-    account_id: Optional[str] = "gemini_flash"
+    account_id: Optional[str] = DEFAULT_ACCOUNT_ID
+    stop_loss: Optional[float] = None
+    target_price: Optional[float] = None
+    hold_to_close: Optional[bool] = False
 
 class ClosePositionRequest(BaseModel):
     symbol: str
-    account_id: Optional[str] = "gemini_flash"
+    account_id: Optional[str] = DEFAULT_ACCOUNT_ID
 
 class ChatRequest(BaseModel):
     message: str
@@ -134,7 +136,7 @@ async def root():
     index_file = static_dir / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
-    return {"message": "Gemini Quant Agent backend is running."}
+    return {"message": "Opus/DeepSeek quant backend is running."}
 
 @app.get("/health")
 async def health_check():
@@ -142,10 +144,12 @@ async def health_check():
     metrics = get_system_metrics()
     return {
         "status": "healthy",
-        "api_key_configured": bool(settings.GEMINI_API_KEY and not settings.GEMINI_API_KEY.startswith("your_")),
-        "agent_model": settings.GEMINI_AGENT_MODEL,
-        "chat_model": getattr(settings, "GEMINI_CHAT_MODEL", "gemini-2.5-flash"),
-        "live_model": settings.GEMINI_LIVE_MODEL,
+        "api_key_configured": bool(
+            settings.DEEPSEEK_API_KEY and not settings.DEEPSEEK_API_KEY.startswith("your_")
+        ),
+        "agent_model": settings.DEEPSEEK_MODEL,
+        "chat_model": settings.DEEPSEEK_MODEL,
+        "opus_model": settings.OPUS_MODEL,
         "workspace_dir": str(settings.absolute_workspace_dir),
         "predictor_active": argon_predictor.is_running,
         "strategy_manager_active": strategy_manager.is_running,
@@ -247,31 +251,33 @@ async def logout(response: Response):
 
 @app.get("/api/models")
 async def list_available_models():
-    """List recommended Gemini models for code reasoning, chat with Google search, and voice interaction."""
+    """List the two supported model providers."""
+    models = [
+        {
+            "id": settings.DEEPSEEK_MODEL,
+            "name": "DeepSeek 4.1 Flash MaaS",
+            "recommended": True,
+            "supports_search": False,
+        },
+        {
+            "id": settings.OPUS_MODEL,
+            "name": "Claude Opus 4.6 Thinking",
+            "recommended": True,
+            "supports_search": False,
+        },
+    ]
     return {
-        "chat_models": [
-            {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash (High-Speed Reasoning & Search)", "recommended": True, "supports_search": True},
-            {"id": "deepseek-ai/deepseek-v4.1-flash-maas", "name": "DeepSeek Flash MaaS (Quant Scalper)", "recommended": True, "supports_search": False},
-            {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "recommended": False, "supports_search": True},
-            {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "recommended": False, "supports_search": True},
-        ],
-        "agent_models": [
-            {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash (High-Speed Reasoning)", "recommended": True},
-            {"id": "deepseek-ai/deepseek-v4.1-flash-maas", "name": "DeepSeek Flash MaaS (Quant Momentum)", "recommended": True},
-            {"id": "gemini-4-argon", "name": "Gemini 4 Argon", "recommended": False},
-        ],
-        "live_models": [
-            {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash (Low Latency Voice)", "recommended": True},
-        ],
-        "voices": ["Puck", "Charon", "Kore", "Fenrir", "Aoede"],
+        "chat_models": models,
+        "agent_models": models,
+        "live_models": [],
+        "voices": [],
     }
 
 @app.get("/api/chatbot/models")
 async def list_chatbot_models():
-    """List Gemini models explicitly configured for Chatbot with Google Search grounding."""
     models_info = await list_available_models()
     return {
-        "default_model": getattr(settings, "GEMINI_CHAT_MODEL", "gemini-3.8-flash"),
+        "default_model": settings.DEEPSEEK_MODEL,
         "models": models_info["chat_models"],
     }
 
@@ -287,12 +293,15 @@ async def place_order(req: FastOrderRequest, auth_user: Dict[str, Any] = Depends
         quantity=req.quantity,
         order_type=req.order_type or "MARKET",
         limit_price=req.limit_price,
-        account_id=req.account_id or "gemini_flash",
+        account_id=req.account_id or DEFAULT_ACCOUNT_ID,
+        stop_loss=req.stop_loss,
+        target_price=req.target_price,
+        hold_to_close=bool(req.hold_to_close),
     )
     return res
 
 @app.get("/api/trading/portfolio")
-async def get_portfolio(account_id: str = Query("gemini_flash"), auth_user: Dict[str, Any] = Depends(require_auth)):
+async def get_portfolio(account_id: str = Query(DEFAULT_ACCOUNT_ID), auth_user: Dict[str, Any] = Depends(require_auth)):
     """Get live portfolio balances, open positions, and arena metrics for designated account."""
     data = execution_engine.get_portfolio_summary(account_id=account_id)
     data["market_status"] = strategy_manager.get_market_status()
@@ -307,9 +316,10 @@ async def get_market_status():
 @app.post("/api/trading/close-position")
 async def close_position(req: ClosePositionRequest, auth_user: Dict[str, Any] = Depends(require_auth)):
     """Instantly close an open position at current market price."""
-    res = await execution_engine.close_position(req.symbol, account_id=req.account_id or "gemini_flash")
+    account_id = req.account_id or DEFAULT_ACCOUNT_ID
+    res = await execution_engine.close_position(req.symbol, account_id=account_id)
     if not res:
-        raise HTTPException(status_code=404, detail=f"No open position found for '{req.symbol}' on account '{req.account_id}'.")
+        raise HTTPException(status_code=404, detail=f"No open position found for '{req.symbol}' on account '{account_id}'.")
     return res
 
 @app.get("/api/trading/orders")
@@ -358,14 +368,13 @@ async def get_sectors_outlook():
     return {"sectors": sentiment_engine.get_all_sectors_outlook()}
 
 # -------------------------------------------------------------
-# DUAL AI ARENA: GEMINI 3.8 FLASH VS DEEPSEEK FLASH
+# TWO-MODEL ARENA: CLAUDE OPUS VS DEEPSEEK
 # -------------------------------------------------------------
 @app.get("/api/trading/arena")
 async def get_dual_arena(auth_user: Dict[str, Any] = Depends(require_auth)):
-    """Get side-by-side performance comparison of Gemini 3.8 Flash vs DeepSeek Flash."""
     return {
         "arena": db.get_arena_comparison(),
-        "gemini_prediction": argon_predictor.gemini_last_prediction,
+        "opus_prediction": argon_predictor.opus_last_prediction,
         "deepseek_prediction": argon_predictor.deepseek_last_prediction,
         "next_run_timestamp": argon_predictor.next_run_timestamp,
         "interval_seconds": argon_predictor.interval_seconds,
@@ -377,7 +386,7 @@ async def trigger_arena_cycle_endpoint(
     symbol: Optional[str] = Query(None),
     auth_user: Dict[str, Any] = Depends(require_auth),
 ):
-    """Trigger parallel 5-min AI cycle for both Gemini and DeepSeek models on demand."""
+    """Trigger a DeepSeek/Opus cycle during the NSE entry window."""
     return await argon_predictor.run_arena_cycle(target_symbol=symbol)
 
 # -------------------------------------------------------------
@@ -385,10 +394,9 @@ async def trigger_arena_cycle_endpoint(
 # -------------------------------------------------------------
 @app.get("/api/trading/prediction")
 async def get_latest_prediction(auth_user: Dict[str, Any] = Depends(require_auth)):
-    """Get the latest 5-minute prediction generated by Gemini 4 Argon / Gemini 3.8 Flash."""
     return {
         "latest_prediction": argon_predictor.last_prediction,
-        "gemini_prediction": argon_predictor.gemini_last_prediction,
+        "opus_prediction": argon_predictor.opus_last_prediction,
         "deepseek_prediction": argon_predictor.deepseek_last_prediction,
         "next_run_timestamp": argon_predictor.next_run_timestamp,
         "auto_execute": argon_predictor.auto_execute,
@@ -413,20 +421,13 @@ async def toggle_auto_execution(
     account_id: Optional[str] = Query(None),
     auth_user: Dict[str, Any] = Depends(require_auth),
 ):
-    """Enable or disable automatic trade execution across agents."""
-    strategy_manager.set_auto_execute(enabled)
+    """Enable or disable automatic execution for one or both paper accounts."""
+    strategy_manager.set_auto_execute(enabled, account_id=account_id)
     argon_predictor.auto_execute = enabled
-    if account_id:
-        acc = db.get_account_state(account_id)
-        db.save_account_state(account_id, acc.get("available_cash", 10000.0), acc.get("total_realized_pnl", 0.0), auto_execute=enabled)
-    else:
-        for acc_id in ["gemini_flash", "deepseek_flash"]:
-            acc = db.get_account_state(acc_id)
-            db.save_account_state(acc_id, acc.get("available_cash", 10000.0), acc.get("total_realized_pnl", 0.0), auto_execute=enabled)
     return {
         "auto_execute": enabled,
         "account_id": account_id or "all_accounts",
-        "market_status": strategy_manager.get_market_status()
+        "market_status": strategy_manager.get_market_status(),
     }
 
 @app.post("/api/trading/reset-account")
@@ -435,10 +436,8 @@ async def reset_trading_account(
     capital: Optional[float] = Query(None),
     auth_user: Dict[str, Any] = Depends(require_auth),
 ):
-    """Reset dummy testing account(s) to specified capital (default ₹10,000)."""
+    """Reset paper account(s) to specified capital (default ₹10,000)."""
     return execution_engine.reset_account(capital=capital, account_id=account_id)
-    """Reset the dummy testing account to specified capital (default ₹10,000)."""
-    return execution_engine.reset_account(capital)
 
 @app.post("/api/trading/pre-market-scan")
 async def trigger_pre_market_scan(auth_user: Dict[str, Any] = Depends(require_auth)):
@@ -499,20 +498,36 @@ async def get_learning_insights(
 
 @app.get("/api/performance/daily")
 async def get_daily_performance(
+    account_id: Optional[str] = Query(None),
     limit: int = Query(30),
     auth_user: Dict[str, Any] = Depends(require_auth),
 ):
-    """Get daily performance history, net profit, and AI token costs."""
-    return {"daily_history": db.get_daily_performance(limit=limit)}
+    """Get daily performance history with gross, fees, AI cost, and net."""
+    return {"daily_history": db.get_daily_performance(account_id=account_id, limit=limit)}
 
 @app.get("/api/tokens/summary")
-async def get_token_accounting(auth_user: Dict[str, Any] = Depends(require_auth)):
-    """Get token usage, model breakdown, and net profit after AI operational cost."""
-    portfolio = execution_engine.get_portfolio_summary()
-    return token_tracker.get_summary(portfolio.get("realized_pnl_inr", 0.0))
+async def get_token_accounting(
+    account_id: Optional[str] = Query(None),
+    auth_user: Dict[str, Any] = Depends(require_auth),
+):
+    """Get token usage, model breakdown, and net profit after AI cost."""
+    account = account_id or DEFAULT_ACCOUNT_ID
+    portfolio = execution_engine.get_portfolio_summary(account)
+    return token_tracker.get_summary(
+        portfolio.get("total_pnl_inr", 0.0), account_id=account
+    )
+
+@app.get("/api/trading/risk-state")
+async def get_risk_state(
+    account_id: str = Query(DEFAULT_ACCOUNT_ID),
+    auth_user: Dict[str, Any] = Depends(require_auth),
+):
+    """Daily loss lock, profit target lock, trade count, and AI cost."""
+    account = execution_engine.get_account(account_id)
+    return strategy_manager.risk.get_state(account_id, account)
 
 # -------------------------------------------------------------
-# INTERACTIVE CHATBOT (GEMINI WITH BUILT-IN GOOGLE SEARCH)
+# INTERACTIVE CHATBOT (DEEPSEEK / CLAUDE OPUS)
 # -------------------------------------------------------------
 @app.post("/api/chatbot", response_model=ChatbotResponse)
 @app.post("/api/chatbot/chat", response_model=ChatbotResponse)
@@ -521,8 +536,8 @@ async def chatbot_endpoint(
     auth_user: Dict[str, Any] = Depends(require_auth),
 ):
     """
-    Primary Chatbot endpoint powered by Google Gemini models with built-in Google Search grounding.
-    Features live NSE/BSE market visibility and sub-50ms trading execution.
+    Chatbot endpoint powered by DeepSeek 4.1 Flash or Claude Opus 4.6.
+    Features live NSE/BSE market visibility and fast paper-order execution.
     """
     return await chatbot_service.chat(
         message=req.message,
@@ -536,7 +551,7 @@ async def chat_with_agent(
     req: ChatRequest,
     auth_user: Dict[str, Any] = Depends(require_auth),
 ):
-    """Interactive chat with live market, portfolio awareness, and Google Search grounding."""
+    """Interactive chat with live market and portfolio awareness."""
     return await chatbot_service.chat(
         message=req.message,
         model=req.model,
@@ -713,20 +728,6 @@ async def ws_predictor_stream(websocket: WebSocket):
         logger.error(f"Error in ws_predictor_stream: {e}")
     finally:
         argon_predictor.unsubscribe(q)
-
-# -------------------------------------------------------------
-# GEMINI MULTIMODAL LIVE VOICE WEBSOCKET
-# -------------------------------------------------------------
-@app.websocket("/ws/live")
-async def ws_live_audio(
-    websocket: WebSocket,
-    model: Optional[str] = Query(None),
-    voice: Optional[str] = Query(None)
-):
-    """Bidirectional voice-to-voice stream with Google Gemini Multimodal Live API."""
-    if not await verify_websocket_auth(websocket):
-        return
-    await handle_live_websocket(websocket, model=model, voice=voice)
 
 # -------------------------------------------------------------
 # WORKSPACE CODE & FILE MANAGEMENT ENDPOINTS

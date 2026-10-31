@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Optional
 import yfinance as yf
 import pandas as pd
 
+from app.config import ACCOUNT_NAMES
 from app.storage.db import db
 
 logger = logging.getLogger("app.trading.candles")
@@ -107,7 +108,7 @@ def get_symbol_candles(
 
     for t in symbol_trades:
         action = t.get("action", "BUY").upper()
-        acc = "Gemini" if "gemini" in t.get("account_id", "") else "DeepSeek"
+        acc = ACCOUNT_NAMES.get(t.get("account_id", ""), t.get("account_id", "Account"))
         price = t.get("fill_price", 0.0)
         qty = t.get("quantity", 1)
         ts_str = t.get("timestamp")

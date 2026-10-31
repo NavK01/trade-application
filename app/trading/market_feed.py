@@ -10,6 +10,7 @@ import datetime
 import logging
 from typing import Dict, Any, List, Optional
 
+from app.config import ACCOUNT_IDS
 from app.financial_advisor.india_market import get_indian_stock_quote, get_indian_market_indices
 from app.trading.execution_engine import execution_engine
 from app.storage.cache import cache
@@ -69,7 +70,7 @@ class MarketDataFeed:
 
         # Include open positions for both trading agents
         try:
-            for acc_id in ["gemini_flash", "deepseek_flash"]:
+            for acc_id in ACCOUNT_IDS:
                 summary = execution_engine.get_portfolio_summary(acc_id)
                 for pos in summary.get("positions", []):
                     sym = pos.get("symbol")

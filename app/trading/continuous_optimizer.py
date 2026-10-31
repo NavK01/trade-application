@@ -5,7 +5,7 @@ Continuously:
 1. Ingests multi-stock intraday & historical data across 20+ NSE equities.
 2. Executes combinatorial strategy sweeps and parameter sensitivity analysis.
 3. Identifies statistical anomalies and hidden institutional order-flow patterns.
-4. Uses DeepSeek Flash MaaS & Gemini 3.8 Flash for quantitative synthesis.
+4. Uses DeepSeek 4.1 Flash MaaS for quantitative synthesis.
 5. Persists learnings to SQLite (learning_log) and INTRADAY_STRATEGY_LEARNING_LOG.md.
 """
 
@@ -68,7 +68,7 @@ class ContinuousOptimizer:
 
             total_trades = res.get("total_trades", 0)
             win_rate = res.get("win_rate_pct", 0.0)
-            net_pnl = res.get("net_pnl_inr", 0.0)
+            net_pnl = res.get("net_pnl_after_ai_inr", res.get("net_pnl_inr", 0.0))
             pf = res.get("profit_factor", 1.0)
             dd = res.get("max_drawdown_pct", 0.0)
             breakdown = res.get("strategy_breakdown", {})
@@ -84,11 +84,15 @@ class ContinuousOptimizer:
                 json.dump(res, f, indent=2)
 
             # 4. Formulate Quantitative Lesson
+            strategy_summary = ", ".join(
+                f"{name} ({data.get('win_rate_pct', 0.0)}%)"
+                for name, data in breakdown.items()
+            )
             lesson = (
                 f"Autonomous Cycle #{iter_num} executed across {len(test_basket)} NSE equities. "
                 f"Yielded {total_trades} trades, {win_rate}% win rate, ₹{net_pnl:+,.2f} net P&L, "
                 f"{pf} profit factor, and {dd}% max drawdown. "
-                f"Top strategies: {', '.join(f'{k} ({v.get(\"win_rate_pct\")}%)' for k, v in breakdown.items())}."
+                f"Top strategies: {strategy_summary}."
             )
 
             # 5. Persist to SQLite

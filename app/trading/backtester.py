@@ -1,67 +1,134 @@
+"""Honest intraday backtester for NSE equities.
+
+Design choices that prevent inflated results:
+  * Signals are evaluated on a completed bar and filled at the NEXT bar open.
+  * Paper slippage and realistic Indian intraday fees are charged.
+  * Gap-through stops are filled at the gap open, not the stop price.
+  * Maximum three entries per day, one open position at a time.
+  * The 1% daily loss lock and 2% daily profit target are enforced.
+  * Optional DeepSeek calls are charged against the result as AI cost.
 """
-Historical Intraday Backtesting Engine for Indian Equities (NSE/BSE).
-Simulates real bar-by-bar market replay over past 5-minute candles,
-evaluates all 7 intraday strategies, and uses DeepSeek Flash MaaS
-to filter high-probability trade setups and measure profitability.
-"""
+
+from __future__ import annotations
 
 import asyncio
 import datetime
 import json
 import logging
-import math
 import re
-from typing import Dict, Any, List, Optional
-import yfinance as yf
+from typing import Any, Dict, List, Optional
+
 import pandas as pd
+import yfinance as yf
 
 from app.config import settings, create_genai_client
-from app.trading.intraday_strategies import intraday_engine
-from app.trading.skills.day_trader_adapter import day_trader
 from app.storage.db import db
 from app.system.tokens import token_tracker
+from app.trading.costs import calculate_buy_fee, calculate_sell_fee
+from app.trading.intraday_strategies import intraday_engine
 
 logger = logging.getLogger("app.trading.backtester")
 
 
+def _ist_index(df: pd.DataFrame) -> pd.DataFrame:
+    idx = pd.to_datetime(df.index, errors="coerce", utc=True)
+    idx = idx.tz_convert("Asia/Kolkata")
+    out = df.copy()
+    out.index = idx
+    return out
+
+
+def hard_invalidation(
+    setup: Dict[str, Any],
+    indicators: Dict[str, Any],
+    recent_bars: List[Dict[str, Any]],
+) -> Optional[str]:
+    """Deterministic check for the three HARD invalidation conditions.
+
+    The AI is only allowed to veto a validated momentum-continuation setup when
+    one of these is literally true. This guard prevents the model from vetoing
+    on weak grounds (low volume, "stalling", high RSI) which we measured to be
+    a coin flip that can flip a profitable month negative.
+
+    Returns a short reason string when a hard invalidation is present, else None.
+    """
+    entry = float(setup.get("entry_price") or 0.0)
+    stop = float(setup.get("stop_loss") or 0.0)
+    or_high = float(setup.get("or_high") or 0.0)
+
+    # H3: stop more than 2.5% below entry -> unacceptable risk/reward.
+    if entry > 0 and stop > 0 and (entry - stop) / entry > 0.025:
+        return "stop wider than 2.5% of entry"
+
+    if not recent_bars:
+        return None
+    last = recent_bars[-1]
+    last_close = float(last.get("close") or last.get("c") or 0.0)
+    vwap = float(indicators.get("vwap") or last.get("vwap") or 0.0)
+
+    # H1: price below BOTH VWAP and the opening-range high -> breakout failed.
+    if last_close > 0 and vwap > 0 and or_high > 0:
+        if last_close < vwap and last_close < or_high:
+            return "price below VWAP and opening-range high"
+
+    # H2: violent reversal bar against the position.
+    if len(recent_bars) >= 2:
+        bar_open = float(last.get("open") or last.get("o") or 0.0)
+        bar_high = float(last.get("high") or last.get("h") or 0.0)
+        bar_low = float(last.get("low") or last.get("l") or 0.0)
+        rng = bar_high - bar_low
+        if rng > 0 and bar_open > 0 and last_close > 0:
+            body_red = last_close < bar_open
+            closes_near_low = (last_close - bar_low) / rng <= 0.25
+            big_bar = (bar_open - last_close) / bar_open >= 0.006
+            if body_red and closes_near_low and big_bar:
+                return "violent reversal bar against the position"
+
+    return None
+
+
 class HistoricalBacktestEngine:
-    """
-    Simulates high-fidelity intraday trading over past 5-minute bar sessions.
-    Executes trades with bracket orders (Entry, Stop Loss, Target 1, Target 2),
-    enforces 15:25 IST end-of-day square-off, and computes full quant metrics.
-    """
+    def __init__(self, initial_capital: Optional[float] = None):
+        self.initial_capital = float(initial_capital or settings.INITIAL_CAPITAL_INR)
 
-    def __init__(self, initial_capital: float = 10000.0):
-        self.initial_capital = initial_capital
-        self.max_loss_pct = 0.02  # 2% max risk per trade (₹200 on ₹10k)
-        self.max_position_pct = 0.70  # Max ₹7,000 position cap for intraday alpha
-
+    # ------------------------------------------------------------------
+    # Data
+    # ------------------------------------------------------------------
     def fetch_historical_bars(self, symbols: List[str], period: str = "5d") -> Dict[str, pd.DataFrame]:
-        """Fetches verified 5-minute historical candle data for the requested Indian tickers."""
-        data = {}
+        data: Dict[str, pd.DataFrame] = {}
         for sym in symbols:
             clean = sym.strip().upper()
             yf_sym = clean if ("." in clean or "^" in clean) else f"{clean}.NS"
             try:
-                t = yf.Ticker(yf_sym)
-                df = t.history(period=period, interval="5m")
+                df = yf.Ticker(yf_sym).history(period=period, interval="5m")
                 if df.empty and yf_sym.endswith(".NS"):
-                    df = yf.Ticker(yf_sym.replace(".NS", ".BO")).history(period=period, interval="5m")
+                    df = yf.Ticker(yf_sym.replace(".NS", ".BO")).history(
+                        period=period, interval="5m"
+                    )
+                if df.empty:
+                    continue
+                df = _ist_index(df).reset_index()
+                df = df.rename(columns={
+                    "Datetime": "timestamp", "Date": "timestamp",
+                    "Open": "open", "High": "high", "Low": "low",
+                    "Close": "close", "Volume": "volume",
+                })
+                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+                df = df.dropna(subset=["timestamp", "open", "high", "low", "close"])
+                df["time"] = df["timestamp"].dt.strftime("%H:%M")
+                df["date"] = df["timestamp"].dt.strftime("%Y-%m-%d")
+                df = df[(df["time"] >= "09:15") & (df["time"] <= "15:30")]
+                df = df.reset_index(drop=True)
                 if not df.empty:
-                    df = df.reset_index()
-                    # Standardize column names
-                    col_map = {
-                        "Datetime": "timestamp", "Date": "timestamp",
-                        "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"
-                    }
-                    df = df.rename(columns=col_map)
-                    df["symbol"] = clean
                     data[clean] = df
-                    logger.info(f"Loaded {len(df)} 5m bars for {clean}")
-            except Exception as e:
-                logger.error(f"Error fetching data for {sym}: {e}")
+                    logger.info("Loaded %d 5m bars for %s", len(df), clean)
+            except Exception as exc:
+                logger.error("Error fetching data for %s: %s", sym, exc)
         return data
 
+    # ------------------------------------------------------------------
+    # Optional AI filter
+    # ------------------------------------------------------------------
     async def _query_deepseek_decision(
         self,
         symbol: str,
@@ -69,277 +136,403 @@ class HistoricalBacktestEngine:
         indicators: Dict[str, Any],
         recent_bars: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """
-        Queries DeepSeek Flash MaaS to evaluate the technical intraday setup
-        and determine whether to EXECUTE or PASS.
-        """
-        api_key = settings.GEMINI_API_KEY
-        client = create_genai_client(api_key, location="global")
+        """Veto-only AI risk filter.
 
-        prompt = f"""You are an elite quantitative day trading analyst evaluating an active intraday setup on the National Stock Exchange of India (NSE).
-Symbol: {symbol}
-Current Price: ₹{setup.get('entry_price', indicators.get('price'))}
-Strategy: {setup.get('name', 'Confluence Setup')}
-Signal: {setup.get('signal')}
-Stop-Loss: ₹{setup.get('stop_loss')}
-Target 1: ₹{setup.get('target_1')}
-Target 2: ₹{setup.get('target_2')}
-Risk:Reward: {setup.get('risk_reward_ratio')}
-Technical Indicators: {json.dumps(indicators)}
-Strategy Rationale: {setup.get('rationale', 'Technical trigger')}
-
-Evaluate if this trade has genuine institutional momentum or is a choppy false breakout.
-Respond strictly in JSON:
-{{
-  "decision": "EXECUTE" | "PASS",
-  "confidence_pct": <integer between 50 and 95>,
-  "adjusted_stop_loss": <float>,
-  "adjusted_target": <float>,
-  "reasoning": "<concise 1-2 sentence explanation>"
-}}
-"""
-        try:
-            resp = await asyncio.wait_for(
-                client.aio.models.generate_content(
-                    model="deepseek-ai/deepseek-v4.1-flash-maas",
-                    contents=prompt,
-                ),
-                timeout=30.0
-            )
-            text = resp.text.strip()
-            m = re.search(r"\{.*\}", text, re.DOTALL)
-            clean_json = m.group(0) if m else text
-            decision_data = json.loads(clean_json)
-            token_tracker.log_usage("backtester_deepseek", "deepseek-ai/deepseek-v4.1-flash-maas", 180, 80)
-            return decision_data
-        except Exception as e:
-            logger.warning(f"DeepSeek query failed/timeout: {e}. Defaulting to algorithmic execution.")
+        The deterministic momentum engine owns the trade geometry (entry, stop,
+        target). The AI may only answer EXECUTE or PASS; it can never move the
+        stop or target, because doing so destroys the validated edge. The prompt
+        is written for a momentum-continuation setup, so the model is not asked
+        to apply mean-reversion logic ("RSI overbought") to a trend trade.
+        """
+        api_key = settings.DEEPSEEK_API_KEY
+        if not api_key or api_key.startswith("your_"):
             return {
-                "decision": "EXECUTE" if setup.get("confidence", 75) >= 78 else "PASS",
-                "confidence_pct": setup.get("confidence", 75),
-                "adjusted_stop_loss": setup.get("stop_loss"),
-                "adjusted_target": setup.get("target_1"),
-                "reasoning": "Algorithmic rule execution (DeepSeek fallback)",
+                "decision": "EXECUTE" if setup.get("confidence", 0) >= 80 else "PASS",
+                "reasoning": "DeepSeek not configured; deterministic confidence gate.",
+                "cost_inr": 0.0,
             }
 
+        prompt = f"""You are a veto-only risk filter for an NSE intraday MOMENTUM CONTINUATION trade.
+The trade geometry is already fixed by a validated quantitative model. You may NOT change the entry, stop, or target. You may only answer EXECUTE or PASS.
+
+Symbol: {symbol}
+Direction: {setup.get('signal')} (long)
+Entry: ₹{setup.get('entry_price')}
+Stop: ₹{setup.get('stop_loss')}
+Target: ₹{setup.get('target_1')}
+Strategy: {setup.get('name')}
+Indicators: {json.dumps(indicators, default=str)}
+Recent bars: {json.dumps(recent_bars, default=str)}
+
+DEFAULT ANSWER IS EXECUTE. This is a TREND trade held to the close. A high RSI or price near the upper Bollinger band is NORMAL and EXPECTED in a momentum continuation and is NOT a reason to reject.
+
+Answer PASS ONLY if at least one HARD invalidation is literally visible in the data above:
+  H1. Price is currently BELOW both VWAP and the opening-range high (the breakout has fully failed).
+  H2. The most recent bar is a violent reversal against the position: a large red bar that closes near its low AND gives back most of the breakout move.
+  H3. The stop is more than 2.5% below entry (risk/reward unacceptable).
+
+Do NOT answer PASS for any of these weak reasons: low volume ratio, "stalling", "consolidating", "waiting for confirmation", RSI being high, price near the upper band, or general caution. If none of H1-H3 is literally true, you MUST answer EXECUTE.
+
+Return raw JSON only:
+{{"decision":"EXECUTE" or "PASS","confidence_pct":50-95,"reasoning":"one sentence"}}
+Do not invent data. Do not return stop or target fields."""
+
+        try:
+            client = create_genai_client(api_key, location="global")
+            resp = await asyncio.wait_for(
+                client.aio.models.generate_content(
+                    model=settings.DEEPSEEK_MODEL,
+                    contents=prompt,
+                ),
+                timeout=25.0,
+            )
+            text = (resp.text or "").strip()
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            decision = json.loads(match.group(0) if match else text)
+            usage = getattr(resp, "usage_metadata", None)
+            p_toks = getattr(usage, "prompt_token_count", 180) if usage else 180
+            c_toks = getattr(usage, "candidates_token_count", 80) if usage else 80
+            cost = token_tracker.calculate_cost_inr(settings.DEEPSEEK_MODEL, p_toks, c_toks)
+            decision["cost_inr"] = cost
+            return decision
+        except Exception as exc:
+            logger.warning("DeepSeek filter failed: %s", exc)
+            return {
+                "decision": "EXECUTE" if setup.get("confidence", 0) >= 80 else "PASS",
+                "reasoning": "DeepSeek unavailable; deterministic confidence gate.",
+                "cost_inr": 0.0,
+            }
+
+    # ------------------------------------------------------------------
+    # Simulation
+    # ------------------------------------------------------------------
     async def run_backtest(
         self,
         symbols: Optional[List[str]] = None,
         period: str = "5d",
-        use_deepseek: bool = True,
+        use_deepseek: bool = False,
         max_deepseek_calls: int = 15,
-        time_filter: bool = False,
+        time_filter: bool = True,
+        primary_only: bool = True,
     ) -> Dict[str, Any]:
         """
-        Executes a historical simulation over multi-day 5-minute bars.
-        Optionally uses DeepSeek Flash MaaS for trade validation and AI filtering.
+        primary_only: when True (default), entries are restricted to the
+        validated primary edge (momentum_continuation). The secondary
+        strategies are still evaluated for context but never open a position,
+        because they have no positive expectancy after costs.
         """
         test_symbols = symbols or ["RELIANCE", "TCS", "INFY", "VEDL", "SBIN", "ICICIBANK"]
-        logger.info(f"Starting intraday backtest across {len(test_symbols)} symbols over {period}...")
-
+        logger.info("Starting next-bar backtest across %d symbols over %s", len(test_symbols), period)
         stock_data = self.fetch_historical_bars(test_symbols, period=period)
         if not stock_data:
             return {"error": "Failed to fetch historical market data."}
 
-        capital = self.initial_capital
-        cash = capital
-        trades: List[Dict[str, Any]] = []
-        deepseek_call_count = 0
-
+        # Prior-day OHLC for Camarilla pivots.
+        prior_day: Dict[str, Dict[str, Dict[str, float]]] = {}
         for sym, df in stock_data.items():
-            if len(df) < 20:
-                continue
-
-            # Group candles by trading day
-            df["date_str"] = df["timestamp"].astype(str).str[:10]
-            grouped_days = df.groupby("date_str")
-            prev_day_summary: Optional[Dict[str, float]] = None
-
-            for date_str, day_df in grouped_days:
-                day_df = day_df.reset_index(drop=True)
-                if len(day_df) < 15:
-                    continue
-
-                open_trade: Optional[Dict[str, Any]] = None
-
-                # Bar-by-bar progression through the session (09:15 to 15:30 IST)
-                for i in range(10, len(day_df)):
-                    current_bar = day_df.iloc[i]
-                    cur_time = str(current_bar["timestamp"])
-                    time_part = cur_time[11:16] if len(cur_time) >= 16 else ""
-
-                    # 1. Manage existing open position
-                    if open_trade:
-                        high_p = float(current_bar["high"])
-                        low_p = float(current_bar["low"])
-                        close_p = float(current_bar["close"])
-
-                        # Check Stop Loss first (conservative check)
-                        if low_p <= open_trade["stop_loss"]:
-                            exit_price = open_trade["stop_loss"]
-                            pnl = (exit_price - open_trade["entry_price"]) * open_trade["quantity"]
-                            fees = (open_trade["entry_price"] + exit_price) * open_trade["quantity"] * 0.0003
-                            net_pnl = round(pnl - fees, 2)
-                            cash += (open_trade["quantity"] * exit_price) - fees
-                            trades.append({
-                                "symbol": sym,
-                                "date": date_str,
-                                "strategy": open_trade["strategy"],
-                                "action": "BUY",
-                                "entry_time": open_trade["entry_time"],
-                                "entry_price": open_trade["entry_price"],
-                                "exit_time": time_part,
-                                "exit_price": exit_price,
-                                "quantity": open_trade["quantity"],
-                                "gross_pnl": round(pnl, 2),
-                                "net_pnl": net_pnl,
-                                "return_pct": round(((exit_price - open_trade["entry_price"]) / open_trade["entry_price"]) * 100, 2),
-                                "exit_reason": "STOP_LOSS",
-                                "won": net_pnl > 0,
-                                "validated_by_deepseek": open_trade.get("validated_by_deepseek", False),
-                            })
-                            open_trade = None
-                            continue
-
-                        # Check Target 1 Hit
-                        elif high_p >= open_trade["target_1"]:
-                            exit_price = open_trade["target_1"]
-                            pnl = (exit_price - open_trade["entry_price"]) * open_trade["quantity"]
-                            fees = (open_trade["entry_price"] + exit_price) * open_trade["quantity"] * 0.0003
-                            net_pnl = round(pnl - fees, 2)
-                            cash += (open_trade["quantity"] * exit_price) - fees
-                            trades.append({
-                                "symbol": sym,
-                                "date": date_str,
-                                "strategy": open_trade["strategy"],
-                                "action": "BUY",
-                                "entry_time": open_trade["entry_time"],
-                                "entry_price": open_trade["entry_price"],
-                                "exit_time": time_part,
-                                "exit_price": exit_price,
-                                "quantity": open_trade["quantity"],
-                                "gross_pnl": round(pnl, 2),
-                                "net_pnl": net_pnl,
-                                "return_pct": round(((exit_price - open_trade["entry_price"]) / open_trade["entry_price"]) * 100, 2),
-                                "exit_reason": "TARGET_HIT",
-                                "won": True,
-                                "validated_by_deepseek": open_trade.get("validated_by_deepseek", False),
-                            })
-                            open_trade = None
-                            continue
-
-                        # Check End of Day Auto Square-off (at or after 15:20 IST)
-                        elif time_part >= "15:20":
-                            exit_price = close_p
-                            pnl = (exit_price - open_trade["entry_price"]) * open_trade["quantity"]
-                            fees = (open_trade["entry_price"] + exit_price) * open_trade["quantity"] * 0.0003
-                            net_pnl = round(pnl - fees, 2)
-                            cash += (open_trade["quantity"] * exit_price) - fees
-                            trades.append({
-                                "symbol": sym,
-                                "date": date_str,
-                                "strategy": open_trade["strategy"],
-                                "action": "BUY",
-                                "entry_time": open_trade["entry_time"],
-                                "entry_price": open_trade["entry_price"],
-                                "exit_time": time_part,
-                                "exit_price": exit_price,
-                                "quantity": open_trade["quantity"],
-                                "gross_pnl": round(pnl, 2),
-                                "net_pnl": net_pnl,
-                                "return_pct": round(((exit_price - open_trade["entry_price"]) / open_trade["entry_price"]) * 100, 2),
-                                "exit_reason": "EOD_SQUARE_OFF",
-                                "won": net_pnl > 0,
-                                "validated_by_deepseek": open_trade.get("validated_by_deepseek", False),
-                            })
-                            open_trade = None
-                            continue
-
-                    # 2. Look for new trade entry if no position is open
-                    trades_in_day = sum(1 for t in trades if t["symbol"] == sym and t["date"] == date_str)
-                    if not open_trade and time_part < "14:45" and trades_in_day < 1:
-                        # Optional time filter: avoid choppy lunch session (11:30 to 13:15 IST)
-                        if time_filter and ("11:30" <= time_part <= "13:15"):
-                            continue
-
-                        history_slice = day_df.iloc[:i + 1].to_dict(orient="records")
-                        eval_res = intraday_engine.evaluate_all_strategies(history_slice, prev_day_ohlc=prev_day_summary)
-
-                        comp_signal = eval_res.get("composite_signal")
-                        best_setup = eval_res.get("best_strategy")
-
-                        # Confluence Requirement: Only execute if multi-strategy composite signal is BUY
-                        if comp_signal == "BUY" and best_setup:
-                            entry_p = best_setup["entry_price"]
-                            sl_p = best_setup["stop_loss"]
-                            tp_p = best_setup["target_1"]
-
-                            # Sizing: 2% risk rule
-                            risk_per_share = max(entry_p - sl_p, entry_p * 0.003)
-                            max_risk_inr = self.initial_capital * self.max_loss_pct  # 2% of ₹10,000 (₹200)
-                            max_alloc_inr = self.initial_capital * self.max_position_pct  # 70% position cap (₹7,000)
-
-                            shares = int(min(max_risk_inr // risk_per_share, max_alloc_inr // entry_p, cash // entry_p))
-                            if shares <= 0 and cash >= entry_p and entry_p <= max_alloc_inr:
-                                shares = 1
-
-                            if shares > 0 and cash >= (shares * entry_p):
-                                validated_by_ds = False
-
-                                # Query DeepSeek Flash MaaS if enabled and quota permits
-                                if use_deepseek and deepseek_call_count < max_deepseek_calls:
-                                    deepseek_call_count += 1
-                                    ds_dec = await self._query_deepseek_decision(
-                                        symbol=sym,
-                                        setup=best_setup,
-                                        indicators=eval_res.get("indicators", {}),
-                                        recent_bars=history_slice[-3:],
-                                    )
-                                    if ds_dec.get("decision") == "PASS":
-                                        continue
-                                    if ds_dec.get("adjusted_stop_loss"):
-                                        sl_p = float(ds_dec["adjusted_stop_loss"])
-                                    if ds_dec.get("adjusted_target"):
-                                        tp_p = float(ds_dec["adjusted_target"])
-                                    validated_by_ds = True
-
-                                # Execute simulated position
-                                cost = shares * entry_p
-                                fee = cost * 0.0003
-                                cash -= (cost + fee)
-
-                                open_trade = {
-                                    "symbol": sym,
-                                    "strategy": best_setup["name"],
-                                    "strategy_id": best_setup.get("strategy_id", "confluence"),
-                                    "entry_time": time_part,
-                                    "entry_price": entry_p,
-                                    "stop_loss": sl_p,
-                                    "initial_stop_loss": sl_p,
-                                    "target_1": tp_p,
-                                    "quantity": shares,
-                                    "validated_by_deepseek": validated_by_ds,
-                                }
-
-                # Update previous day summary for next session's Camarilla & Pivot calculations
-                prev_day_summary = {
-                    "high": float(day_df["high"].max()),
-                    "low": float(day_df["low"].min()),
-                    "close": float(day_df["close"].iloc[-1]),
+            prior_day[sym] = {}
+            for date_str, day in df.groupby("date"):
+                prior_day[sym][date_str] = {
+                    "high": float(day["high"].max()),
+                    "low": float(day["low"].min()),
+                    "close": float(day["close"].iloc[-1]),
                 }
 
-        # Aggregate backtest performance metrics
-        total_trades = len(trades)
-        wins = [t for t in trades if t["won"]]
-        losses = [t for t in trades if not t["won"]]
+        all_dates = sorted({d for df in stock_data.values() for d in df["date"].unique()})
+        cash = self.initial_capital
+        trades: List[Dict[str, Any]] = []
+        daily_results: List[Dict[str, Any]] = []
+        ai_cost_total = 0.0
+        deepseek_calls = 0
+        max_position_pct = settings.MAX_POSITION_PCT
+        risk_per_trade = settings.RISK_PER_TRADE_PCT / 100.0
+        slippage = settings.PAPER_SLIPPAGE_BPS / 10_000.0
 
-        win_rate = round((len(wins) / total_trades * 100), 1) if total_trades > 0 else 0.0
-        total_net_pnl = round(sum(t["net_pnl"] for t in trades), 2)
+        for date_str in all_dates:
+            day_frames = {
+                sym: df[df["date"] == date_str].reset_index(drop=True)
+                for sym, df in stock_data.items()
+            }
+            day_frames = {s: d for s, d in day_frames.items() if len(d) >= 5}
+            if not day_frames:
+                continue
+
+            day_start_equity = cash
+            day_trades = 0
+            day_locked = False
+            day_lock_reason = ""
+            day_ai_cost = 0.0
+            day_realized_pnl = 0.0
+            open_trade: Optional[Dict[str, Any]] = None
+            times = sorted({t for d in day_frames.values() for t in d["time"].unique()})
+
+            for time_str in times:
+                # 1. Manage an open position at this timestamp.
+                if open_trade:
+                    sym = open_trade["symbol"]
+                    frame = day_frames.get(sym)
+                    bar_rows = frame[frame["time"] == time_str] if frame is not None else pd.DataFrame()
+                    if not bar_rows.empty:
+                        bar = bar_rows.iloc[0]
+                        exit_price = None
+                        exit_reason = None
+                        bar_open = float(bar["open"])
+                        bar_high = float(bar["high"])
+                        bar_low = float(bar["low"])
+                        bar_close = float(bar["close"])
+
+                        if bar_open <= open_trade["stop_loss"]:
+                            exit_price, exit_reason = bar_open, "STOP_GAP"
+                        elif bar_low <= open_trade["stop_loss"]:
+                            exit_price, exit_reason = open_trade["stop_loss"], "STOP_LOSS"
+                        elif not open_trade.get("hold_to_close"):
+                            if bar_open >= open_trade["target_1"]:
+                                exit_price, exit_reason = bar_open, "TARGET_GAP"
+                            elif bar_high >= open_trade["target_1"]:
+                                exit_price, exit_reason = open_trade["target_1"], "TARGET_HIT"
+                        if exit_price is None and time_str >= "15:20":
+                            exit_price, exit_reason = bar_close, "EOD_SQUARE_OFF"
+
+                        if exit_price is not None:
+                            exit_price = round(float(exit_price), 2)
+                            exit_fee = calculate_sell_fee(exit_price * open_trade["quantity"])
+                            gross = round(
+                                (exit_price - open_trade["entry_price"]) * open_trade["quantity"], 2
+                            )
+                            net = round(gross - open_trade["entry_fee"] - exit_fee, 2)
+                            cash = round(
+                                cash + exit_price * open_trade["quantity"] - exit_fee, 2
+                            )
+                            open_trade.update({
+                                "exit_time": time_str,
+                                "exit_price": exit_price,
+                                "exit_reason": exit_reason,
+                                "gross_pnl": gross,
+                                "fees_inr": round(open_trade["entry_fee"] + exit_fee, 2),
+                                "net_pnl": net,
+                                "return_pct": round(
+                                    (exit_price / open_trade["entry_price"] - 1) * 100, 2
+                                ),
+                                "won": net > 0,
+                            })
+                            trades.append(open_trade)
+                            day_realized_pnl += net
+                            open_trade = None
+
+                # 2. Daily risk guard on REALIZED P&L (closed trades) plus AI cost.
+                #    Using realized P&L avoids locking the day on an unrealized
+                #    drawdown of a hold-to-close position that later recovers.
+                #    The position's own stop is the risk control for open trades.
+                net_today = day_realized_pnl - day_ai_cost
+                if not day_locked:
+                    if net_today <= -day_start_equity * settings.MAX_DAILY_LOSS_PCT / 100.0:
+                        day_locked = True
+                        day_lock_reason = "DAILY_LOSS_LIMIT"
+                    elif net_today >= day_start_equity * settings.TARGET_NET_PROFIT_PCT / 100.0:
+                        day_locked = True
+                        day_lock_reason = "DAILY_PROFIT_TARGET"
+
+                # A lock blocks NEW entries only. An open hold-to-close position
+                # is left to its own stop / EOD square-off so a winner is never
+                # cut short by the daily guard.
+                if day_locked and open_trade and not open_trade.get("hold_to_close"):
+                    frame = day_frames.get(open_trade["symbol"])
+                    rows = frame[frame["time"] == time_str] if frame is not None else pd.DataFrame()
+                    if not rows.empty:
+                        exit_price = round(float(rows.iloc[0]["close"]), 2)
+                        exit_fee = calculate_sell_fee(exit_price * open_trade["quantity"])
+                        gross = round(
+                            (exit_price - open_trade["entry_price"]) * open_trade["quantity"], 2
+                        )
+                        net = round(gross - open_trade["entry_fee"] - exit_fee, 2)
+                        cash = round(cash + exit_price * open_trade["quantity"] - exit_fee, 2)
+                        open_trade.update({
+                            "exit_time": time_str,
+                            "exit_price": exit_price,
+                            "exit_reason": day_lock_reason,
+                            "gross_pnl": gross,
+                            "fees_inr": round(open_trade["entry_fee"] + exit_fee, 2),
+                            "net_pnl": net,
+                            "return_pct": round(
+                                (exit_price / open_trade["entry_price"] - 1) * 100, 2
+                            ),
+                            "won": net > 0,
+                        })
+                        trades.append(open_trade)
+                        day_realized_pnl += net
+                        open_trade = None
+
+                # 3. Look for a new entry, filled on the NEXT bar's open.
+                if open_trade or day_locked or day_trades >= settings.MAX_TRADES_PER_DAY:
+                    continue
+                if time_str >= "14:45":
+                    continue
+                if time_filter and ("11:30" <= time_str <= "13:15"):
+                    continue
+
+                candidates = []
+                for sym, frame in day_frames.items():
+                    rows = frame[frame["time"] == time_str]
+                    if rows.empty:
+                        continue
+                    idx = int(rows.index[0])
+                    if idx + 1 >= len(frame):
+                        continue
+                    next_bar = frame.iloc[idx + 1]
+                    if str(next_bar["time"]) > "15:20":
+                        continue
+                    history = frame.iloc[: idx + 1].to_dict(orient="records")
+                    eval_res = intraday_engine.evaluate_all_strategies(
+                        history,
+                        prev_day_ohlc=prior_day.get(sym, {}).get(date_str),
+                    )
+                    if eval_res.get("composite_signal") != "BUY":
+                        continue
+                    best = eval_res.get("best_strategy")
+                    if not best:
+                        continue
+                    if primary_only and best.get("strategy_id") != "momentum_continuation":
+                        continue
+                    entry_px = round(float(next_bar["open"]) * (1.0 + slippage), 2)
+                    stop = round(float(best.get("stop_loss", entry_px * 0.992)), 2)
+                    target = round(float(best.get("target_1", entry_px * 1.014)), 2)
+                    if stop >= entry_px or target <= entry_px:
+                        continue
+                    candidates.append({
+                        "symbol": sym,
+                        "setup": best,
+                        "indicators": eval_res.get("indicators", {}),
+                        "recent_bars": history[-3:],
+                        "entry_price": entry_px,
+                        "stop_loss": stop,
+                        "target_1": target,
+                        "entry_time": str(next_bar["time"]),
+                    })
+
+                if not candidates:
+                    continue
+                candidates.sort(
+                    key=lambda c: float(c["setup"].get("confidence", 0)), reverse=True
+                )
+                chosen = candidates[0]
+
+                if use_deepseek and deepseek_calls < max_deepseek_calls:
+                    deepseek_calls += 1
+                    decision = await self._query_deepseek_decision(
+                        symbol=chosen["symbol"],
+                        setup=chosen["setup"],
+                        indicators=chosen["indicators"],
+                        recent_bars=chosen["recent_bars"],
+                    )
+                    call_cost = float(decision.get("cost_inr", 0.0))
+                    ai_cost_total += call_cost
+                    day_ai_cost += call_cost
+                    if decision.get("decision") != "EXECUTE":
+                        # The AI may only veto on a HARD invalidation. If the
+                        # deterministic guard finds none, the veto is a weak
+                        # signal (low volume, "stalling", high RSI) and is
+                        # downgraded so it cannot destroy the validated edge.
+                        hard = hard_invalidation(
+                            chosen["setup"], chosen["indicators"], chosen["recent_bars"]
+                        )
+                        if hard is None:
+                            logger.info(
+                                "AI veto on %s downgraded (no hard invalidation): %s",
+                                chosen["symbol"], decision.get("reasoning", ""),
+                            )
+                        else:
+                            continue
+                    # The AI is veto-only: it may never move the validated stop or
+                    # target, because that destroys the momentum edge.
+
+                entry = chosen["entry_price"]
+                stop = chosen["stop_loss"]
+                target = chosen["target_1"]
+                if stop >= entry or target <= entry:
+                    continue
+                risk_per_share = entry - stop
+                max_risk = day_start_equity * risk_per_trade
+                max_position = day_start_equity * max_position_pct
+                qty = int(min(max_risk / risk_per_share, max_position / entry))
+                # Ensure entry fee is funded.
+                while qty > 0:
+                    cost = entry * qty
+                    entry_fee = calculate_buy_fee(cost)
+                    if cost + entry_fee <= cash:
+                        break
+                    qty -= 1
+                if qty <= 0:
+                    continue
+
+                cost = round(entry * qty, 2)
+                entry_fee = calculate_buy_fee(cost)
+                cash = round(cash - cost - entry_fee, 2)
+                open_trade = {
+                    "symbol": chosen["symbol"],
+                    "date": date_str,
+                    "strategy": chosen["setup"].get("name", "confluence"),
+                    "strategy_id": chosen["setup"].get("strategy_id", "confluence"),
+                    "action": "BUY",
+                    "entry_time": chosen["entry_time"],
+                    "entry_price": entry,
+                    "stop_loss": stop,
+                    "target_1": target,
+                    "quantity": qty,
+                    "entry_fee": entry_fee,
+                    "hold_to_close": bool(chosen["setup"].get("hold_to_close")),
+                    "validated_by_deepseek": bool(use_deepseek and deepseek_calls),
+                }
+                day_trades += 1
+
+            # 4. Force flat at the end of the session.
+            if open_trade:
+                frame = day_frames[open_trade["symbol"]]
+                last = frame.iloc[-1]
+                exit_price = round(float(last["close"]), 2)
+                exit_fee = calculate_sell_fee(exit_price * open_trade["quantity"])
+                gross = round((exit_price - open_trade["entry_price"]) * open_trade["quantity"], 2)
+                net = round(gross - open_trade["entry_fee"] - exit_fee, 2)
+                cash = round(cash + exit_price * open_trade["quantity"] - exit_fee, 2)
+                open_trade.update({
+                    "exit_time": str(last["time"]),
+                    "exit_price": exit_price,
+                    "exit_reason": "EOD_SQUARE_OFF",
+                    "gross_pnl": gross,
+                    "fees_inr": round(open_trade["entry_fee"] + exit_fee, 2),
+                    "net_pnl": net,
+                    "return_pct": round((exit_price / open_trade["entry_price"] - 1) * 100, 2),
+                    "won": net > 0,
+                })
+                trades.append(open_trade)
+                day_realized_pnl += net
+                open_trade = None
+
+            day_end_equity = round(cash, 2)
+            daily_results.append({
+                "date": date_str,
+                "start_equity": round(day_start_equity, 2),
+                "end_equity": day_end_equity,
+                "trading_pnl": round(day_end_equity - day_start_equity, 2),
+                "realized_pnl": round(day_realized_pnl, 2),
+                "ai_cost_inr": round(day_ai_cost, 2),
+                "net_after_ai_inr": round(day_end_equity - day_start_equity - day_ai_cost, 2),
+                "trades": day_trades,
+                "locked": day_locked,
+                "lock_reason": day_lock_reason,
+            })
+
+        total_trades = len(trades)
+        wins = [t for t in trades if t["net_pnl"] > 0]
+        losses = [t for t in trades if t["net_pnl"] <= 0]
+        gross_pnl = round(sum(t["gross_pnl"] for t in trades), 2)
+        fees = round(sum(t["fees_inr"] for t in trades), 2)
+        net_before_ai = round(gross_pnl - fees, 2)
+        net_after_ai = round(net_before_ai - ai_cost_total, 2)
+        win_rate = round(len(wins) / total_trades * 100, 1) if total_trades else 0.0
         gross_profit = sum(t["net_pnl"] for t in wins)
         gross_loss = abs(sum(t["net_pnl"] for t in losses))
-        profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (99.0 if gross_profit > 0 else 1.0)
+        profit_factor = round(gross_profit / gross_loss, 2) if gross_loss else (99.0 if gross_profit else 0.0)
 
-        # Drawdown calculation
         equity_curve = [self.initial_capital]
         running = self.initial_capital
         peak = running
@@ -347,49 +540,49 @@ Respond strictly in JSON:
         for t in trades:
             running += t["net_pnl"]
             equity_curve.append(running)
-            if running > peak:
-                peak = running
-            dd = (peak - running) / peak * 100.0
-            if dd > max_dd:
-                max_dd = dd
+            peak = max(peak, running)
+            max_dd = max(max_dd, (peak - running) / peak * 100.0 if peak else 0.0)
 
-        # Strategy breakdown
-        strategy_stats = {}
-        for t in trades:
-            s_name = t["strategy"]
-            if s_name not in strategy_stats:
-                strategy_stats[s_name] = {"trades": 0, "wins": 0, "pnl": 0.0}
-            strategy_stats[s_name]["trades"] += 1
-            if t["won"]:
-                strategy_stats[s_name]["wins"] += 1
-            strategy_stats[s_name]["pnl"] = round(strategy_stats[s_name]["pnl"] + t["net_pnl"], 2)
-
-        for s_name, data in strategy_stats.items():
-            data["win_rate_pct"] = round((data["wins"] / data["trades"]) * 100, 1) if data["trades"] > 0 else 0.0
-
-        ending_capital = round(self.initial_capital + total_net_pnl, 2)
-        net_return_pct = round((total_net_pnl / self.initial_capital) * 100, 2)
+        strategy_stats: Dict[str, Dict[str, Any]] = {}
+        for trade in trades:
+            name = trade["strategy"]
+            bucket = strategy_stats.setdefault(name, {"trades": 0, "wins": 0, "pnl": 0.0})
+            bucket["trades"] += 1
+            bucket["wins"] += 1 if trade["won"] else 0
+            bucket["pnl"] = round(bucket["pnl"] + trade["net_pnl"], 2)
+        for bucket in strategy_stats.values():
+            bucket["win_rate_pct"] = round(bucket["wins"] / bucket["trades"] * 100, 1)
 
         summary = {
             "initial_capital_inr": self.initial_capital,
-            "ending_capital_inr": ending_capital,
-            "net_pnl_inr": total_net_pnl,
-            "net_return_pct": net_return_pct,
+            "ending_capital_inr": round(self.initial_capital + net_after_ai, 2),
+            "gross_pnl_inr": gross_pnl,
+            "fees_inr": fees,
+            "ai_cost_inr": round(ai_cost_total, 2),
+            "net_pnl_before_ai_inr": net_before_ai,
+            "net_pnl_after_ai_inr": net_after_ai,
+            "net_return_before_ai_pct": round(net_before_ai / self.initial_capital * 100, 2),
+            "net_return_after_ai_pct": round(net_after_ai / self.initial_capital * 100, 2),
             "total_trades": total_trades,
             "winning_trades": len(wins),
             "losing_trades": len(losses),
             "win_rate_pct": win_rate,
             "profit_factor": profit_factor,
             "max_drawdown_pct": round(max_dd, 2),
-            "deepseek_queries_count": deepseek_call_count,
+            "deepseek_queries_count": deepseek_calls,
             "time_filter_applied": time_filter,
+            "primary_only": primary_only,
+            "daily_results": daily_results,
             "strategy_breakdown": strategy_stats,
             "trades": trades,
         }
-
-        logger.info(f"Backtest completed: {total_trades} trades, {win_rate}% win rate, net P&L ₹{total_net_pnl:+} ({net_return_pct}%)")
+        logger.info(
+            "Backtest complete: %d trades, %.1f%% win rate, gross ₹%.2f, fees ₹%.2f, "
+            "AI ₹%.2f, net after AI ₹%.2f (%.2f%%)",
+            total_trades, win_rate, gross_pnl, fees, ai_cost_total,
+            net_after_ai, summary["net_return_after_ai_pct"],
+        )
         return summary
 
 
 backtest_engine = HistoricalBacktestEngine()
-

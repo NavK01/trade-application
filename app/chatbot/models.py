@@ -1,5 +1,5 @@
 """
-Pydantic data models for the Gemini Chatbot module.
+Pydantic data models for the quant chatbot module.
 """
 
 from typing import List, Optional, Dict, Any
@@ -13,7 +13,7 @@ class ChatMessage(BaseModel):
 
 class ChatbotRequest(BaseModel):
     message: str = Field(..., description="The user prompt or trading command")
-    model: Optional[str] = Field(None, description="Gemini model to use (e.g. gemini-2.5-flash, gemini-2.5-pro, gemini-3.8-flash)")
+    model: Optional[str] = Field(None, description="Model to use: DeepSeek 4.1 Flash or Claude Opus 4.6 Thinking")
     use_search: Optional[bool] = Field(True, description="Enable built-in Google Search grounding")
     history: Optional[List[ChatMessage]] = Field(None, description="Optional multi-turn conversation history")
 
@@ -25,7 +25,7 @@ class GroundingSource(BaseModel):
 
 class GroundingInfo(BaseModel):
     search_enabled: bool = Field(False, description="Whether Google Search was used")
-    search_queries: List[str] = Field(default_factory=list, description="Search queries executed by Gemini")
+    search_queries: List[str] = Field(default_factory=list, description="Market news queries executed by the app")
     sources: List[GroundingSource] = Field(default_factory=list, description="Grounding chunks and source URLs")
 
 

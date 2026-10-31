@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gemini & DeepSeek Quant Trading Terminal</title>
+  <title>Claude Opus & DeepSeek Quant Trading Terminal</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,10 +17,10 @@
     <!-- Top Navigation Header with Live Market Ticker & Dual Agent Arena Leaderboard -->
     <header class="navbar">
       <div class="brand">
-        <div class="logo-gemini">✦</div>
+        <div class="logo-quant">✦</div>
         <div>
-          <h1>GEMINI QUANT TERMINAL • AI DUAL ARENA</h1>
-          <span class="sub-badge">Gemini 3.8 Flash vs DeepSeek Flash • 5-Min Cycles • Day Trader Skill</span>
+          <h1>QUANT TRADING TERMINAL • AI DUAL ARENA</h1>
+          <span class="sub-badge">Claude Opus 4.6 Thinking vs DeepSeek 4.1 Flash • 5-Min Cycles • Paper Trading</span>
         </div>
       </div>
 
@@ -45,8 +45,8 @@
           <span id="server-ram-tag">RAM: --%</span>
           <span id="server-cpu-tag">CPU: --%</span>
         </div>
-        <button id="btn-trigger-arena-cycle" class="btn btn-small btn-primary" title="Trigger both Gemini & DeepSeek AI models on scanned stock">⚔️ Run Arena Cycle</button>
-        <button id="btn-pre-market-scan" class="btn btn-small btn-accent" title="Run Pre-Market Google Search analysis for budget stocks">🌅 Pre-Market</button>
+        <button id="btn-trigger-arena-cycle" class="btn btn-small btn-primary" title="Trigger both Claude Opus and DeepSeek models on the scanned stock">⚔️ Run Arena Cycle</button>
+        <button id="btn-pre-market-scan" class="btn btn-small btn-accent" title="Run pre-market news analysis for budget stocks">🌅 Pre-Market</button>
         <button id="btn-run-backtest" class="btn btn-small btn-secondary" title="Run Intraday Backtest on past 5-min data with DeepSeek Flash MaaS">🧪 Backtest (DeepSeek)</button>
         <button id="btn-reset-account" class="btn btn-small btn-secondary" title="Reset both testing dummy accounts to ₹10,000 each">🔄 Reset ₹10K</button>
         <button id="btn-show-instructions" class="btn btn-small btn-secondary">📖 Guide</button>
@@ -57,46 +57,46 @@
       </div>
     </header>
 
-    <!-- Side-by-Side AI Arena Strip: Gemini 3.8 Flash vs DeepSeek Flash -->
+    <!-- Side-by-Side AI Arena Strip: Claude Opus vs DeepSeek -->
     <section class="arena-strip">
       
-      <!-- Card 1: Gemini 3.8 Flash -->
-      <div class="arena-card gemini-card">
+      <!-- Card 1: Claude Opus 4.6 Thinking -->
+      <div class="arena-card opus-card">
         <div class="arena-card-header">
-          <div class="agent-tag gemini-tag">
-            <span class="agent-dot dot-gemini"></span>
-            <strong id="gemini-agent-title">CLAUDE OPUS 4.6 THINKING</strong>
-            <span id="gemini-model-badge" class="model-id-badge">Institutional Benchmark</span>
+          <div class="agent-tag opus-tag">
+            <span class="agent-dot dot-opus"></span>
+            <strong id="opus-agent-title">CLAUDE OPUS 4.6 THINKING</strong>
+            <span id="opus-model-badge" class="model-id-badge">Institutional Benchmark</span>
           </div>
           <div class="agent-metrics">
-            <span>Cash: <strong id="gemini-cash">₹ 10,000.00</strong></span>
-            <span>Realized: <strong id="gemini-pnl" class="val-green">₹ 0.00 (+0.0%)</strong></span>
-            <span>Win Rate: <strong id="gemini-winrate">0.0%</strong></span>
+            <span>Cash: <strong id="opus-cash">₹ 10,000.00</strong></span>
+            <span>Realized: <strong id="opus-pnl" class="val-green">₹ 0.00 (+0.0%)</strong></span>
+            <span>Win Rate: <strong id="opus-winrate">0.0%</strong></span>
           </div>
         </div>
 
         <div class="arena-card-body">
           <div class="pred-signal-box">
-            <span id="gemini-signal" class="signal-badge signal-buy">BUY</span>
-            <span id="gemini-sym" class="pred-sym">SBIN</span>
-            <span id="gemini-conf" class="pred-confidence">Conf: 76%</span>
+            <span id="opus-signal" class="signal-badge signal-buy">BUY</span>
+            <span id="opus-sym" class="pred-sym">SBIN</span>
+            <span id="opus-conf" class="pred-confidence">Conf: 76%</span>
           </div>
           <div class="pred-details">
-            <span>Entry: <strong id="gemini-entry">₹ 815.0</strong></span>
-            <span>Target: <strong id="gemini-target">₹ 825.0</strong></span>
-            <span>Stop: <strong id="gemini-stop">₹ 810.0</strong></span>
-            <span>R:R: <strong id="gemini-rr">1:2.0</strong></span>
+            <span>Entry: <strong id="opus-entry">₹ 815.0</strong></span>
+            <span>Target: <strong id="opus-target">₹ 825.0</strong></span>
+            <span>Stop: <strong id="opus-stop">₹ 810.0</strong></span>
+            <span>R:R: <strong id="opus-rr">1:2.0</strong></span>
           </div>
           <div class="pred-catalyst-box">
-            <span id="gemini-catalyst" class="catalyst-text">ORB Setup: Midpoint Stop with healthy market breadth.</span>
+            <span id="opus-catalyst" class="catalyst-text">ORB Setup: Midpoint Stop with healthy market breadth.</span>
           </div>
           <div class="agent-footer-row">
             <label class="switch">
-              <input type="checkbox" id="toggle-auto-gemini" checked>
+              <input type="checkbox" id="toggle-auto-opus">
               <span class="slider round"></span>
             </label>
             <span class="toggle-label">Auto-Execute (Claude Opus)</span>
-            <span id="gemini-positions-count" class="badge badge-idle">0 Open</span>
+            <span id="opus-positions-count" class="badge badge-idle">0 Open</span>
           </div>
         </div>
       </div>
@@ -143,7 +143,7 @@
           </div>
           <div class="agent-footer-row">
             <label class="switch">
-              <input type="checkbox" id="toggle-auto-deepseek" checked>
+              <input type="checkbox" id="toggle-auto-deepseek">
               <span class="slider round"></span>
             </label>
             <span class="toggle-label">Auto-Execute (DeepSeek)</span>
@@ -206,7 +206,7 @@
           <div class="order-input-group">
             <label for="order-account-select">Agent:</label>
             <select id="order-account-select" class="form-select-small">
-              <option value="gemini_flash" selected>Claude Opus 4.6 Thinking (Account A)</option>
+              <option value="opus_flash" selected>Claude Opus 4.6 Thinking (Account A)</option>
               <option value="deepseek_flash">DeepSeek Flash MaaS (Account B)</option>
             </select>
           </div>
@@ -277,7 +277,7 @@
           <div class="positions-filter-bar">
             <span>Filter Account:</span>
             <button class="chip-filter active" data-acc="all">All Agents</button>
-            <button class="chip-filter" data-acc="gemini_flash">Claude Opus</button>
+            <button class="chip-filter" data-acc="opus_flash">Claude Opus</button>
             <button class="chip-filter" data-acc="deepseek_flash">DeepSeek Flash</button>
           </div>
           <div class="table-container">
@@ -332,19 +332,18 @@
         </div>
       </section>
 
-      <!-- Column 3: Live Quant Chatbot, Live Voice & Token Metrics -->
+      <!-- Column 3: Live Quant Chatbot & Token Metrics -->
       <section class="panel chat-voice-panel">
         <div class="panel-header">
-          <h2>💬 Live Quant Chatbot (DeepSeek + Search)</h2>
+          <h2>💬 Live Quant Chatbot (DeepSeek / Opus)</h2>
           <div class="header-right chat-controls">
-            <label class="search-toggle-label" title="Toggle built-in Google Search grounding">
+            <label class="search-toggle-label" title="Toggle live market news and quote context">
               <input type="checkbox" id="chat-search-toggle" checked />
               <span class="search-toggle-text">🔍 Search</span>
             </label>
             <select id="chat-model-select" class="form-select chat-model-dropdown" title="Select Model">
-              <option value="deepseek-ai/deepseek-v4.1-flash-maas" selected>DeepSeek Flash MaaS</option>
-              <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="deepseek-ai/deepseek-v4.1-flash-maas" selected>DeepSeek 4.1 Flash</option>
+              <option value="claude-opus-4-6-thinking">Claude Opus 4.6 Thinking</option>
             </select>
           </div>
         </div>
@@ -361,23 +360,6 @@
           <button id="btn-send-chat" class="btn btn-primary">Send</button>
         </div>
 
-        <!-- Real-Time Voice Bridge & Audio Visualizer -->
-        <div class="voice-hero-arena">
-          <div class="voice-top-row">
-            <span>🎙️ Gemini Live Voice Stream</span>
-            <canvas id="visualizer" width="180" height="28"></canvas>
-          </div>
-          <div class="mic-action-box">
-            <button id="btn-toggle-live" class="btn btn-primary btn-small">
-              <span id="btn-live-icon">▶</span>
-              <span id="btn-live-text">Connect Voice</span>
-            </button>
-            <button id="btn-toggle-mic" class="btn btn-secondary btn-small" disabled>
-              <span id="btn-mic-icon">🎤</span>
-              <span id="btn-mic-text">Mic Off</span>
-            </button>
-          </div>
-        </div>
 
         <!-- Token Accounting Card -->
         <div class="token-card-mini" id="token-card">
@@ -390,7 +372,7 @@
             <strong id="tokens-cost">₹ 0.00</strong>
           </div>
           <div class="token-mini-row">
-            <span>Combined PnL:</span>
+            <span>Gross PnL (after fees):</span>
             <strong id="tokens-trading-pnl">₹ 0.00</strong>
           </div>
         </div>
@@ -403,16 +385,16 @@
     <div id="instructions-modal" class="modal-overlay">
       <div class="modal-card">
         <div class="modal-header">
-          <h2>📖 Gemini Quant Terminal & AI Arena Guide</h2>
+          <h2>📖 Quant Terminal & AI Arena Guide</h2>
           <button id="btn-close-modal" class="btn-close">&times;</button>
         </div>
         <div class="modal-body">
-          <h3>⚔️ 1. Gemini 3.8 Flash vs DeepSeek Flash Dual Arena</h3>
+          <h3>⚔️ 1. Claude Opus 4.6 vs DeepSeek 4.1 Flash Dual Arena</h3>
           <p>Two independent AI instances trade in parallel with separate initial credits (₹10,000 each):</p>
           <ul>
-            <li><strong>Account A (Gemini 3.8 Flash)</strong>: Vertex AI model optimized for momentum, news sentiment, and tight 1:2.0 risk-reward setups.</li>
-            <li><strong>Account B (DeepSeek Flash MaaS)</strong>: DeepSeek model deployed via Vertex Global endpoint, optimized for ultra-fast scalping.</li>
-            <li><strong>5-Minute Cycles</strong>: Both models evaluate the market every 5 minutes and auto-execute when confidence &ge; 75%.</li>
+            <li><strong>Account A (Claude Opus 4.6 Thinking)</strong>: benchmark account run through the local Opus CLI.</li>
+            <li><strong>Account B (DeepSeek 4.1 Flash)</strong>: primary execution account using DeepSeek MaaS.</li>
+            <li><strong>5-Minute Cycles</strong>: Both models evaluate the market every 5 minutes. Auto-execution is off by default and must be enabled explicitly.</li>
           </ul>
 
           <h3>📈 2. Professional Candlestick Charts & Technical Overlays</h3>
@@ -438,7 +420,7 @@
         <div class="login-header">
           <div class="login-logo-glow">🔐</div>
           <h2>Administrator Sign In</h2>
-          <p class="login-subtitle">Secured Gemini Quant Trading Terminal</p>
+          <p class="login-subtitle">Secured Quant Trading Terminal</p>
         </div>
         <form id="login-form" class="login-form" onsubmit="return false;">
           <div id="login-error-msg" class="login-error-msg" style="display: none;"></div>

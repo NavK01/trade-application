@@ -1,7 +1,8 @@
 """
-Gemini Chatbot Service with Built-in Google Search Grounding and Live Quant Awareness.
-Controls server health, RAM monitoring, auto-execution toggling, pre-market screening,
-and conversational order routing.
+Quant chatbot with live market, portfolio, and order-command awareness.
+
+Only DeepSeek 4.1 Flash and Claude Opus 4.6 are supported. Market news is
+retrieved through the configured news search provider, not a model vendor.
 """
 
 import asyncio
@@ -9,9 +10,9 @@ import json
 import logging
 import re
 from typing import Dict, Any, Optional, List
-from google.genai import types
 
-from app.config import settings, create_genai_client
+from app.config import settings
+from app.system.llm import account_for_model, generate_text
 from app.trading.execution_engine import execution_engine
 from app.trading.predictor import argon_predictor
 from app.trading.strategy_manager import strategy_manager
@@ -31,7 +32,7 @@ logger = logging.getLogger("app.chatbot")
 
 
 class ChatbotService:
-    """Core Chatbot orchestrator supporting Gemini models with Google Search grounding and VM control."""
+    """Chatbot orchestrator for DeepSeek and Claude Opus with live market context."""
 
     async def detect_and_execute_trade(self, text: str) -> Optional[Dict[str, Any]]:
         """Detect and execute high-speed market orders from natural language input."""
@@ -54,7 +55,7 @@ class ChatbotService:
         return None
 
     def _get_live_context(self, trade_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Compile live terminal context for Gemini reasoning."""
+        """Compile live terminal context for the model."""
         portfolio = execution_engine.get_portfolio_summary()
         latest_pred = argon_predictor.last_prediction
         metrics = get_system_metrics()
@@ -87,10 +88,12 @@ class ChatbotService:
         history: Optional[List[ChatMessage]] = None,
     ) -> ChatbotResponse:
         """
-        Process chat with selected Gemini model, server control commands, and Google Search grounding.
+        Process chat with DeepSeek or Claude Opus, server controls, and live market context.
         """
         clean_text = message.strip()
-        selected_model = model or getattr(settings, "GEMINI_CHAT_MODEL", None) or settings.GEMINI_AGENT_MODEL
+        selected_model = model or settings.DEEPSEEK_MODEL
+        if selected_model not in (settings.DEEPSEEK_MODEL, settings.OPUS_MODEL):
+            selected_model = settings.DEEPSEEK_MODEL
         portfolio = execution_engine.get_portfolio_summary()
 
         # ------------------------------------------------------------------
@@ -98,7 +101,10 @@ class ChatbotService:
         # ------------------------------------------------------------------
         if re.search(r'\b(status|server|ram|cpu|hardware|health|system)\b', clean_text, re.IGNORECASE):
             metrics = get_system_metrics()
-            token_stats = token_tracker.get_summary(portfolio.get("realized_pnl_inr", 0.0))
+            token_stats = token_tracker.get_summary(
+                portfolio.get("gross_pnl_inr", 0.0),
+                account_id=portfolio.get("account_id"),
+            )
             reply = (
                 f"### 🖥️ Server & Application Diagnostics\n\n"
                 f"- **RAM Usage:** {metrics['ram']['used_gb']} GB / {metrics['ram']['total_gb']} GB ({metrics['ram']['percent']}% used)\n"
@@ -206,15 +212,18 @@ class ChatbotService:
         # 6. Token Usage & AI Operational Profit Calculation
         # ------------------------------------------------------------------
         if re.search(r'\b(tokens?|ai\s?costs?|costs?|net\s?profit)\b', clean_text, re.IGNORECASE):
-            summary = token_tracker.get_summary(portfolio.get("realized_pnl_inr", 0.0))
+            summary = token_tracker.get_summary(
+                portfolio.get("gross_pnl_inr", 0.0),
+                account_id=portfolio.get("account_id"),
+            )
             breakdown_str = "\n".join([f"- `{b['model']}`: {b['tokens']:,} tokens across {b['calls']} calls (₹{b['cost_inr']})" for b in summary["breakdown_by_model"]]) or "No usage recorded yet."
 
             reply = (
                 f"### 🪙 Token Accounting & Profit Analysis\n\n"
                 f"- **Total Tokens Consumed:** {summary['total_tokens_used']:,} tokens\n"
                 f"- **Estimated AI Operational Cost:** ₹{summary['estimated_ai_cost_inr']:,.2f}\n"
-                f"- **Realized Trading PnL:** ₹{summary['realized_trading_pnl_inr']:+,.2f}\n"
-                f"- **Net Profit (Trading PnL - AI Costs):** **₹{summary['net_profit_after_ai_cost_inr']:+,.2f}**\n\n"
+                f"- **Gross Trading PnL (after fees, before AI):** ₹{summary['gross_trading_pnl_inr']:+,.2f}\n"
+                f"- **Net Profit (Gross PnL - AI Costs):** **₹{summary['net_profit_after_ai_cost_inr']:+,.2f}**\n\n"
                 f"**Model Breakdown:**\n{breakdown_str}"
             )
             return ChatbotResponse(
@@ -245,30 +254,6 @@ class ChatbotService:
         trade_result = await self.detect_and_execute_trade(clean_text)
         portfolio = execution_engine.get_portfolio_summary()
         context = self._get_live_context(trade_result)
-
-        api_key = settings.GEMINI_API_KEY
-        if not api_key or api_key.startswith("your_"):
-            if trade_result:
-                reply = (
-                    f"⚡ Fast Order Executed: {trade_result.get('action')} {trade_result.get('quantity')} "
-                    f"{trade_result.get('symbol')} at ₹{trade_result.get('fill_price')} in {trade_result.get('latency_ms')}ms! "
-                    f"(Status: {trade_result.get('status')})"
-                )
-            else:
-                reply = (
-                    f"Live terminal active. Available Cash: ₹{portfolio['available_cash_inr']:,.2f} with total PnL: ₹{portfolio['total_pnl_inr']:+,.2f}. "
-                    f"(Note: Configure your GEMINI_API_KEY in .env for full Gemini reasoning & Google Search)."
-                )
-            return ChatbotResponse(
-                reply=reply,
-                model_used=f"{selected_model} (Local Simulation)",
-                trade_result=trade_result,
-                portfolio=portfolio,
-                grounding=GroundingInfo(search_enabled=False),
-                success=True,
-            )
-
-        client = create_genai_client(api_key, location="global")
 
         # Grounding with live Indian market data & news if requested or relevant
         grounded_context: Dict[str, Any] = {}
@@ -348,111 +333,30 @@ class ChatbotService:
         prompt_parts.append(f"USER MESSAGE:\n\"{clean_text}\"\n\nProvide an actionable quant response in INR (₹):")
         final_prompt = "".join(prompt_parts)
 
-        config = types.GenerateContentConfig(
-            system_instruction=CHATBOT_SYSTEM_PROMPT,
-            temperature=0.2,
-            max_output_tokens=300,
-        )
-
-        ds_config = types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=300,
-        )
-
         reply_text = None
         model_used = selected_model
-        is_deepseek = "deepseek" in selected_model.lower()
+        prompt_tokens = 0
+        completion_tokens = 0
+        ai_used = False
 
-        # 1. If DeepSeek is chosen, query DeepSeek Flash MaaS directly
-        if is_deepseek:
-            try:
-                ds_client = create_genai_client(location="global")
-                ds_prompt = f"{CHATBOT_SYSTEM_PROMPT}\n\n{final_prompt}"
-                ds_resp = await asyncio.wait_for(
-                    ds_client.aio.models.generate_content(
-                        model="deepseek-ai/deepseek-v4.1-flash-maas",
-                        contents=ds_prompt,
-                        config=ds_config,
-                    ),
-                    timeout=25.0
-                )
-                if ds_resp.text:
-                    reply_text = ds_resp.text.strip()
-                    model_used = "deepseek-ai/deepseek-v4.1-flash-maas"
-            except Exception as ds_err:
-                logger.warning(f"DeepSeek chatbot error: {type(ds_err).__name__} {ds_err}")
-        else:
-            # 2. Parallel Dual-Model Race: Launch both Gemini 3.8 Flash & DeepSeek Flash MaaS concurrently
-            # The fastest model to finish delivers the answer immediately to eliminate user wait time!
-            ds_client = create_genai_client(location="global")
-            ds_prompt = f"{CHATBOT_SYSTEM_PROMPT}\n\n{final_prompt}"
+        try:
+            result = await generate_text(
+                final_prompt,
+                model=selected_model,
+                system_instruction=CHATBOT_SYSTEM_PROMPT,
+                temperature=0.2,
+                max_output_tokens=300,
+                timeout=25.0,
+            )
+            reply_text = result["text"]
+            model_used = result["model"]
+            prompt_tokens = int(result.get("prompt_tokens", 0))
+            completion_tokens = int(result.get("completion_tokens", 0))
+            ai_used = True
+        except Exception as ai_err:
+            logger.warning("Chatbot AI error: %s %s", type(ai_err).__name__, ai_err)
 
-            async def _query_gemini():
-                r = await client.aio.models.generate_content(
-                    model=selected_model,
-                    contents=final_prompt,
-                    config=config,
-                )
-                if r.text:
-                    return (selected_model, r.text.strip())
-                elif r.candidates and r.candidates[0].content and r.candidates[0].content.parts:
-                    pts = [p.text for p in r.candidates[0].content.parts if getattr(p, "text", None)]
-                    if pts:
-                        return (selected_model, "".join(pts).strip())
-                raise ValueError("Empty Gemini response text")
-
-            async def _query_deepseek():
-                r = await ds_client.aio.models.generate_content(
-                    model="deepseek-ai/deepseek-v4.1-flash-maas",
-                    contents=ds_prompt,
-                    config=ds_config,
-                )
-                if r.text:
-                    return ("deepseek-ai/deepseek-v4.1-flash-maas", r.text.strip())
-                raise ValueError("Empty DeepSeek response text")
-
-            task_g = asyncio.create_task(_query_gemini())
-            task_d = asyncio.create_task(_query_deepseek())
-
-            try:
-                done, pending = await asyncio.wait(
-                    [task_g, task_d],
-                    return_when=asyncio.FIRST_COMPLETED,
-                    timeout=25.0
-                )
-
-                # Check completed tasks
-                for t in done:
-                    try:
-                        m_name, m_text = t.result()
-                        if m_text:
-                            reply_text = m_text
-                            model_used = m_name
-                            break
-                    except Exception as task_err:
-                        logger.debug(f"Candidate model error: {task_err}")
-
-                # If first completed task had an error but pending is still running, wait for remaining task
-                if not reply_text and pending:
-                    done_second, _ = await asyncio.wait(pending, timeout=8.0)
-                    for t in done_second:
-                        try:
-                            m_name, m_text = t.result()
-                            if m_text:
-                                reply_text = m_text
-                                model_used = m_name
-                                break
-                        except Exception:
-                            pass
-
-                # Cancel remaining pending tasks
-                for p in pending:
-                    if not p.done():
-                        p.cancel()
-            except Exception as race_err:
-                logger.warning(f"Dual-model race timeout: {race_err}")
-
-        # 3. Deterministic Local Quant Synthesizer if both external AI APIs fail
+        # Deterministic local answer if the model provider is unavailable.
         if not reply_text:
             market_open = strategy_manager.is_market_open()
             reply_text = (
@@ -465,8 +369,15 @@ class ChatbotService:
             )
             model_used = f"{selected_model} (Local Quant Synthesizer)"
 
-        # Token Accounting
-        token_tracker.log_usage("chatbot_query", model_used, 350, 200)
+        # Token accounting records only real provider usage, never estimates.
+        if ai_used:
+            token_tracker.log_usage(
+                "chatbot_query",
+                model_used,
+                prompt_tokens,
+                completion_tokens,
+                account_id=account_for_model(model_used),
+            )
 
         grounding_info = GroundingInfo(
             search_enabled=bool(grounding_sources),

@@ -1,10 +1,11 @@
 """
-Multi-Tiered Autonomous AI Market Predictor & Dual Agent Arena Controller.
-Runs parallel 5-minute prediction cycles for:
-1. Account A: Claude Opus 4.6 Thinking / Gemini 3.8 Flash (Antigravity Pro Benchmark, ₹0.00 cloud credits)
-2. Account B: DeepSeek Flash MaaS (Live Trading Execution Engine with Massive Multi-Timeframe Context)
-Features dynamic market scanning (30+ liquid Indian stocks) and day-trader-skill integration.
-Strictly enforces daily quota and market hours (09:15 - 15:30 IST).
+Autonomous AI market predictor and two-account arena.
+
+Account A: Claude Opus 4.6 Thinking (Antigravity benchmark)
+Account B: DeepSeek 4.1 Flash MaaS (primary execution model)
+
+The loop is hard-gated to the NSE session. Off-market cycles consume no AI
+tokens, and every order passes the broker risk manager.
 """
 
 import asyncio
@@ -31,40 +32,40 @@ from app.trading.scanner import scanner
 from app.trading.skills.day_trader_adapter import day_trader
 from app.trading.sentiment_analyzer import sentiment_engine
 from app.trading.intraday_strategies import intraday_engine
+from app.trading.backtester import hard_invalidation
 from app.storage.db import db
 from app.storage.cache import cache
 from app.system.tokens import token_tracker
+from app.trading import market_hours
 
 logger = logging.getLogger("argon_predictor")
 
-PREDICTOR_SYSTEM_PROMPT = """You are an elite quantitative trading strategist for the Indian Stock Market (NSE/BSE).
-Your primary mandate is proactive intraday alpha generation for a ₹10,000 capital account.
-You actively identify high-conviction BUY and SELL opportunities across liquid Indian equities.
+# Number of recent 5-minute bars ever serialised into an AI prompt. The veto
+# rules only inspect the last few bars, so a short window keeps prompts small
+# (lower latency and token cost) without changing the decision.
+AI_BAR_WINDOW = 25
 
-Quantitative Trade Execution Rules:
-1. ORB-15m Momentum: When 5-minute close breaks above Opening Range High (with VWAP and SuperTrend bullish alignment), execute aggressive BUY with 1:1.4+ target. When breaking below OR Low, execute SELL.
-2. VWAP Institutional Reversal & Continuation: When price tests VWAP and prints a bullish rejection candle supported by 50-EMA and SuperTrend, execute BUY.
-3. Camarilla Expansion: Breakouts above Camarilla H4 target H5 expansion. Breakdowns below L4 target L5 expansion.
-4. Active Trading Mindset: Do NOT default to HOLD when directional momentum exists. A setup with >= 55% probability and 1:1.3+ risk-to-reward is an actionable trade. HOLD is strictly reserved for dead sideways compression.
-5. Disciplined Stop Loss: Anchor stop losses at natural technical levels (ORB midpoint, VWAP - 0.5 ATR, or Camarilla H3).
+PREDICTOR_SYSTEM_PROMPT = """You are a VETO-ONLY risk filter for an NSE intraday MOMENTUM CONTINUATION trade.
+
+The trade geometry (entry, stop loss, target) has already been fixed by a validated deterministic quantitative model. You may NOT change the entry, stop, or target. You may only answer EXECUTE or PASS.
+
+DEFAULT ANSWER IS EXECUTE. This is a TREND trade that is held to the close. A high RSI or a price near the upper Bollinger band is NORMAL and EXPECTED in a momentum continuation and is NOT a reason to reject.
+
+Answer PASS ONLY if at least one HARD invalidation is literally visible in the supplied data:
+1. Price is currently BELOW both VWAP and the opening-range high (the breakout has fully failed).
+2. The most recent bar is a violent reversal against the position: a large red bar closing near its low that gives back most of the breakout move.
+3. The stop is more than 2.5% below entry (risk/reward unacceptable).
+
+Do NOT answer PASS for weak reasons such as: low volume ratio, "stalling", "consolidating", "waiting for confirmation", RSI being high, price near the upper band, or general caution. If none of the three hard conditions is literally true, you MUST answer EXECUTE.
 
 Respond strictly with a valid JSON object matching this schema:
 {
-  "signal": "BUY" | "SELL" | "HOLD",
+  "decision": "EXECUTE" | "PASS",
   "symbol": "<TICKER>",
-  "confidence_pct": <integer between 55 and 99>,
-  "current_price_inr": <float>,
-  "entry_zone_inr": "<e.g. 918.0 - 922.0>",
-  "target_1_inr": <float>,
-  "target_2_inr": <float>,
-  "stop_loss_inr": <float>,
-  "risk_reward_ratio": "<e.g. 1:1.5>",
-  "timeframe": "<5-15 Min Scalp OR 30-60 Min Strategic>",
-  "catalyst": "<Crisp 1-2 sentence technical and volume rationale based on 5m candles, ORB, and indicators>",
-  "key_risks": "<Primary risk factor or invalidation level>",
-  "action_summary": "<Direct trade action instruction>"
+  "confidence_pct": <integer between 50 and 95>,
+  "reasoning": "<one crisp sentence>"
 }
-Ensure calculations strictly adhere to current live prices in Indian Rupees (INR / ₹). Return raw JSON only.
+Do not invent data. Do not return stop or target fields. Return raw JSON only.
 """
 
 EMERGENCY_SYSTEM_PROMPT = """You are an Emergency Risk Manager operating inside an active high-speed Indian stock market terminal.
@@ -98,7 +99,7 @@ class ArgonPredictor:
         self.interval_seconds = interval_seconds  # 300s = 5 minutes
         self.cycle_count = 0
         self.last_prediction: Optional[Dict[str, Any]] = None
-        self.gemini_last_prediction: Optional[Dict[str, Any]] = None
+        self.opus_last_prediction: Optional[Dict[str, Any]] = None
         self.deepseek_last_prediction: Optional[Dict[str, Any]] = None
         self.prediction_history: List[Dict[str, Any]] = []
         self.next_run_timestamp: Optional[str] = None
@@ -131,39 +132,21 @@ class ArgonPredictor:
                 pass
 
     def determine_attention_level(self) -> Dict[str, Any]:
-        """Adaptive attention mechanism to conserve tokens and align with NSE market hours."""
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
-        ist_now = now_utc + datetime.timedelta(hours=5, minutes=30)
-        current_minute = ist_now.hour * 60 + ist_now.minute
-        weekday = ist_now.weekday()
-
-        # Weekend (Saturday=5, Sunday=6)
-        if weekday in (5, 6):
+        """Conserve tokens outside the entry window and near the close."""
+        now = market_hours.now_ist()
+        if not market_hours.is_entry_window(now):
+            status = market_hours.get_market_status(now)
             return {
                 "level": "SLEEP_OFF_MARKET",
                 "interval_seconds": 900,
                 "allow_ai_call": False,
-                "reason": "Weekend: Indian markets closed. Next trading session opens Monday 09:15 IST."
+                "reason": f"{status['description']}. No AI calls outside the entry window.",
             }
-
-        # Market Hours: 09:15 to 15:30 IST
-        market_open_minute = 9 * 60 + 15
-        market_close_minute = 15 * 60 + 30
-
-        if current_minute < market_open_minute or current_minute >= market_close_minute:
-            return {
-                "level": "SLEEP_OFF_MARKET",
-                "interval_seconds": 900,
-                "allow_ai_call": False,
-                "reason": "Off-market hours (NSE/BSE trading hours: 09:15 - 15:30 IST)."
-            }
-
-        # Active market hours
         return {
             "level": "NORMAL",
             "interval_seconds": 300,
             "allow_ai_call": True,
-            "reason": "Active Indian market hours. Running 5-min DeepSeek vs Claude Opus Arena cycle."
+            "reason": "Active NSE entry window. Running DeepSeek vs Claude Opus arena cycle.",
         }
 
     def start_background_loop(self):
@@ -186,12 +169,20 @@ class ArgonPredictor:
             self.cycle_count += 1
 
             try:
-                logger.info(f"⚡ Starting Dual Arena Cycle #{self.cycle_count} (Mode: {attention_info['level']}, interval: {self.interval_seconds}s)")
-                await asyncio.wait_for(self.run_arena_cycle(), timeout=85.0)
+                if not attention_info["allow_ai_call"]:
+                    logger.info(
+                        "Cycle #%s skipped: %s", self.cycle_count, attention_info["reason"]
+                    )
+                else:
+                    logger.info(
+                        "Starting arena cycle #%s (interval %ss)",
+                        self.cycle_count, self.interval_seconds,
+                    )
+                    await asyncio.wait_for(self.run_arena_cycle(), timeout=125.0)
             except asyncio.TimeoutError:
-                logger.error(f"Arena prediction cycle #{self.cycle_count} timed out after 60s. Advancing to next interval.")
+                logger.error("Arena cycle #%s timed out.", self.cycle_count)
             except Exception as e:
-                logger.error(f"Error in arena prediction cycle #{self.cycle_count}: {e}", exc_info=True)
+                logger.error("Error in arena cycle #%s: %s", self.cycle_count, e, exc_info=True)
 
             # Periodic memory & storage pruning every 12 cycles (~1 hour)
             if self.cycle_count % 12 == 0:
@@ -219,6 +210,60 @@ class ArgonPredictor:
 
             await asyncio.sleep(self.interval_seconds)
 
+    def _load_market_frames(self, symbol: str):
+        """Load and cache 5-minute and daily frames for a symbol."""
+        now_ts = datetime.datetime.now(datetime.timezone.utc).timestamp()
+        cached = self._bar_cache.get(symbol)
+        if cached and (now_ts - cached["timestamp"] < 180):
+            return cached["df_5m"], cached["df_daily"]
+
+        yf_sym = normalize_indian_symbol(symbol)
+        ticker = yf.Ticker(yf_sym)
+        try:
+            df_5m = ticker.history(period="5d", interval="5m")
+            if df_5m.empty and yf_sym.endswith(".NS"):
+                df_5m = yf.Ticker(yf_sym.replace(".NS", ".BO")).history(
+                    period="5d", interval="5m"
+                )
+        except Exception:
+            df_5m = pd.DataFrame()
+        try:
+            df_daily = ticker.history(period="1mo", interval="1d")
+        except Exception:
+            df_daily = pd.DataFrame()
+
+        self._bar_cache[symbol] = {
+            "timestamp": now_ts,
+            "df_5m": df_5m,
+            "df_daily": df_daily,
+        }
+        return df_5m, df_daily
+
+    @staticmethod
+    def _today_orb_bars(df_5m) -> List[Dict[str, float]]:
+        if df_5m is None or getattr(df_5m, "empty", True):
+            return []
+        frame = df_5m.reset_index()
+        frame.columns = [str(c) for c in frame.columns]
+        ts_col = "Datetime" if "Datetime" in frame.columns else (
+            "Date" if "Date" in frame.columns else frame.columns[0]
+        )
+        frame["_date"] = pd.to_datetime(frame[ts_col], errors="coerce").dt.date
+        today = market_hours.now_ist().date()
+        today_frame = frame[frame["_date"] == today]
+        if today_frame.empty:
+            today_frame = frame.tail(3)
+        bars = []
+        for _, row in today_frame.head(3).iterrows():
+            bars.append({
+                "open": float(row.get("Open", 0)),
+                "high": float(row.get("High", 0)),
+                "low": float(row.get("Low", 0)),
+                "close": float(row.get("Close", 0)),
+                "volume": float(row.get("Volume", 0)),
+            })
+        return bars
+
     def _build_massive_market_context(
         self,
         symbol: str,
@@ -230,41 +275,14 @@ class ArgonPredictor:
         sim_odds: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        Builds a comprehensive, multi-timeframe quantitative market payload:
-        1. 5-day 5-minute bars (up to 375 candles) with all indicators pre-calculated.
-        2. Daily macro history (30 trading days) for primary trend & 52-week context.
-        3. Prior-day session Camarilla Pivots (H1-H5, L1-L5) and Classical Floor Pivots.
-        4. Day-Trader ORB Setup & Monte Carlo Time Machine simulation odds.
-        5. Evaluated Intraday Strategy Confluence across all 7 quantitative strategies.
-        6. Market Breadth & Volatility (Nifty 50, Bank Nifty, Sensex, India VIX).
-        7. Real-time News Articles & Sector Sentiment.
-        8. The 7 Empirical Iteration Rules & Quant Axioms from INTRADAY_STRATEGY_LEARNING_LOG.md.
+        Builds the market context used by the veto-only AI layer.
+
+        The deterministic engine consumes the full indicator series; the AI
+        only ever sees a short recent window (see ``AI_BAR_WINDOW``). Keeping
+        the payload small cuts latency and token cost without changing the
+        decision, because the veto rules only look at the last few bars.
         """
-        now_ts = datetime.datetime.now(datetime.timezone.utc).timestamp()
-        cached = self._bar_cache.get(symbol)
-        if cached and (now_ts - cached["timestamp"] < 180):
-            df_5m = cached["df_5m"]
-            df_daily = cached["df_daily"]
-        else:
-            yf_sym = normalize_indian_symbol(symbol)
-            ticker = yf.Ticker(yf_sym)
-            try:
-                df_5m = ticker.history(period="5d", interval="5m")
-                if df_5m.empty and yf_sym.endswith(".NS"):
-                    df_5m = yf.Ticker(yf_sym.replace(".NS", ".BO")).history(period="5d", interval="5m")
-            except Exception:
-                df_5m = pd.DataFrame()
-
-            try:
-                df_daily = ticker.history(period="1mo", interval="1d")
-            except Exception:
-                df_daily = pd.DataFrame()
-
-            self._bar_cache[symbol] = {
-                "timestamp": now_ts,
-                "df_5m": df_5m,
-                "df_daily": df_daily,
-            }
+        df_5m, df_daily = self._load_market_frames(symbol)
 
         # Process 5-minute bars and technical indicators
         bars_series = []
@@ -324,7 +342,7 @@ class ArgonPredictor:
                 "floor_pivot_pp": round((p_high + p_low + p_close) / 3.0, 2),
             }
 
-        # Intraday Strategy Confluence
+        # Intraday Strategy Confluence (deterministic engine input)
         confluence_eval = intraday_engine.evaluate_all_strategies(
             bars_series if bars_series else [{"close": quote.get("current_price", 0), "open": quote.get("current_price", 0), "high": orb_plan.get("or_high", 0), "low": orb_plan.get("or_low", 0), "volume": 5000}]
         )
@@ -332,11 +350,16 @@ class ArgonPredictor:
         acc_state_deepseek = db.get_account_state("deepseek_flash")
         open_positions = execution_engine.get_portfolio_summary("deepseek_flash").get("positions", [])
 
+        # Only the recent window is ever shown to the AI. The full series is
+        # kept in memory for the deterministic engine but never serialised
+        # into a prompt.
+        ai_bars = bars_series[-AI_BAR_WINDOW:]
+
         return {
             "target_symbol": symbol,
             "live_quote": quote,
             "total_5m_candles_loaded": len(bars_series),
-            "historical_5m_bars_with_indicators": bars_series,
+            "historical_5m_bars_with_indicators": ai_bars,
             "macro_daily_context": macro_context,
             "institutional_pivot_levels": pivot_levels,
             "day_trader_skill_setup": {
@@ -351,20 +374,172 @@ class ArgonPredictor:
             },
             "account_execution_status": {
                 "account_id": "deepseek_flash",
-                "available_cash_inr": acc_state_deepseek.get("available_cash", 10000.0),
+                "available_cash_inr": acc_state_deepseek.get("available_cash", settings.INITIAL_CAPITAL_INR),
                 "realized_pnl_inr": acc_state_deepseek.get("total_realized_pnl", 0.0),
                 "active_holdings": open_positions,
+                "max_position_pct": settings.MAX_POSITION_PCT,
+                "max_daily_loss_pct": settings.MAX_DAILY_LOSS_PCT,
+                "max_trades_per_day": settings.MAX_TRADES_PER_DAY,
             },
             "empirical_strategy_axioms": [
-                "1. ORB-15m breakout is the #1 highest-conviction intraday strategy in Indian equities (85-100% win rate across 7 iterations).",
-                "2. Bollinger Upper Band (+2σ) is strictly a TAKE-PROFIT target; NEVER buy at upper band exhaustion.",
-                "3. Quadruple-Filter VWAP: Buy only when Price >= 50 EMA, 45 <= RSI <= 68, Volume >= 1.15x SMA(20), and SuperTrend is Bullish.",
-                "4. Midday Lull: Avoid fresh breakout entries between 11:30 and 13:15 IST.",
-                "5. Stop Loss Discipline: Use natural technical stops (ORB midpoint or VWAP - 0.8 ATR); do NOT trail prematurely to breakeven at +0.8R.",
-                "6. Camarilla H4 Breakout target is H5; L4 breakdown target is L5.",
-                "7. Mandatory square-off before 15:25 IST."
+                "1. The validated primary edge is INTRADAY MOMENTUM CONTINUATION: first hour (09:15-10:15) closes above the day open, then price breaks the opening-range high. Hold to the close.",
+                "2. A high RSI or price at the upper Bollinger band is NORMAL in a momentum continuation and is NOT a rejection reason.",
+                "3. The deterministic engine owns entry, stop, and target. The AI is a veto-only filter and may never move them.",
+                "4. Stop loss is anchored at the opening-range midpoint (natural invalidation of the momentum thesis).",
+                "5. Reject only on genuine invalidation: price back below VWAP AND below the opening-range high, or a violent reversal bar against the position.",
+                "6. The secondary strategies (ORB, VWAP, EMA ribbon, SuperTrend, Camarilla, Bollinger, RSI) are context only; they have no positive expectancy after costs.",
+                "7. Mandatory square-off before 15:20 IST."
             ]
         }
+
+    # ------------------------------------------------------------------
+    # Veto-only AI architecture
+    # ------------------------------------------------------------------
+    # The deterministic momentum engine owns trade geometry (entry, stop,
+    # target). The AI may only answer EXECUTE or PASS. This mirrors the
+    # validated backtester so live behaviour matches the tested edge.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_primary_setup(
+        massive_context: Dict[str, Any],
+        orb_plan: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Extract the deterministic momentum-continuation setup, if any.
+
+        Returns a dict with fixed geometry (entry/stop/target) or None when
+        the deterministic conditions are not met. The AI never sees or
+        modifies these numbers; it only votes EXECUTE/PASS.
+        """
+        confluence = massive_context.get("intraday_confluence_evaluation") or {}
+        evaluated = confluence.get("strategies_evaluated") or {}
+        setup = evaluated.get("momentum")
+        if not setup or not setup.get("active"):
+            return None
+        if setup.get("signal") not in ("BUY", "SELL"):
+            return None
+
+        entry = float(setup.get("entry_price") or 0.0)
+        stop = float(setup.get("stop_loss") or 0.0)
+        target = float(setup.get("target_1") or 0.0)
+        if entry <= 0 or stop <= 0 or stop >= entry:
+            return None
+        if target <= entry:
+            # hold_to_close trades have no fixed target; use a wide placeholder
+            target = round(entry * 1.05, 2)
+
+        return {
+            "strategy": "momentum_continuation",
+            "signal": setup.get("signal"),
+            "entry_price": round(entry, 2),
+            "stop_loss": round(stop, 2),
+            "target_1": round(target, 2),
+            "hold_to_close": bool(setup.get("hold_to_close", True)),
+            "confidence": int(setup.get("confidence", 88)),
+            "rationale": setup.get("rationale", "First-hour trend up with opening-range breakout."),
+            "or_high": float(orb_plan.get("or_high") or 0.0),
+            "or_low": float(orb_plan.get("or_low") or 0.0),
+        }
+
+    def _build_veto_prediction(
+        self,
+        symbol: str,
+        account_id: str,
+        model_name: str,
+        setup: Dict[str, Any],
+        decision: str,
+        confidence_pct: int,
+        reasoning: str,
+        tokens_used: int = 0,
+    ) -> Dict[str, Any]:
+        """Assemble a prediction dict from a fixed deterministic setup plus
+        the AI's EXECUTE/PASS vote. Geometry is never taken from the AI."""
+        entry = float(setup["entry_price"])
+        stop = float(setup["stop_loss"])
+        target = float(setup["target_1"])
+        signal = setup["signal"] if decision == "EXECUTE" else "HOLD"
+        pred = {
+            "account_id": account_id,
+            "signal": signal,
+            "symbol": symbol,
+            "confidence_pct": int(confidence_pct),
+            "current_price_inr": entry,
+            "entry_zone_inr": f"{entry - 1.0:.1f} - {entry + 1.0:.1f}",
+            "target_1_inr": target,
+            "target_2_inr": round(target * 1.01, 2),
+            "stop_loss_inr": stop,
+            "risk_reward_ratio": "hold-to-close",
+            "timeframe": "Intraday Momentum (hold to close)",
+            "hold_to_close": bool(setup.get("hold_to_close", True)),
+            "strategy": "momentum_continuation",
+            "catalyst": reasoning or setup.get("rationale", ""),
+            "key_risks": "Momentum failure: price back below VWAP and the opening-range high.",
+            "action_summary": (
+                f"{'Execute' if decision == 'EXECUTE' else 'Skip'} momentum continuation on {symbol} "
+                f"(entry ₹{entry:.2f}, stop ₹{stop:.2f}, hold to close)."
+            ),
+            "ai_decision": decision,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "model": model_name,
+            "tokens_used": tokens_used,
+        }
+        db.record_prediction(pred)
+        return pred
+
+    def _deterministic_setup_prediction(
+        self,
+        symbol: str,
+        account_id: str,
+        model_name: str,
+        setup: Dict[str, Any],
+        tokens_used: int = 0,
+    ) -> Dict[str, Any]:
+        """Fallback when the AI is unavailable: trust the validated
+        deterministic engine and execute the setup directly."""
+        return self._build_veto_prediction(
+            symbol=symbol,
+            account_id=account_id,
+            model_name=model_name,
+            setup=setup,
+            decision="EXECUTE",
+            confidence_pct=int(setup.get("confidence", 88)),
+            reasoning=f"Deterministic engine (AI unavailable): {setup.get('rationale', '')}",
+            tokens_used=tokens_used,
+        )
+
+    def _no_setup_prediction(
+        self,
+        symbol: str,
+        account_id: str,
+        model_name: str,
+        reason: str = "No valid momentum-continuation setup.",
+    ) -> Dict[str, Any]:
+        """Neutral HOLD prediction when the deterministic engine finds no edge."""
+        price = cache.get_price(symbol) or 0.0
+        pred = {
+            "account_id": account_id,
+            "signal": "HOLD",
+            "symbol": symbol,
+            "confidence_pct": 50,
+            "current_price_inr": price,
+            "entry_zone_inr": "N/A",
+            "target_1_inr": None,
+            "target_2_inr": None,
+            "stop_loss_inr": None,
+            "risk_reward_ratio": "N/A",
+            "timeframe": "Intraday Momentum (hold to close)",
+            "hold_to_close": False,
+            "strategy": "none",
+            "catalyst": reason,
+            "key_risks": "No trade taken.",
+            "action_summary": "No action: deterministic engine found no momentum-continuation setup.",
+            "ai_decision": "PASS",
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "model": model_name,
+            "tokens_used": 0,
+        }
+        db.record_prediction(pred)
+        return pred
 
     async def _query_deepseek_prediction(
         self,
@@ -374,29 +549,56 @@ class ArgonPredictor:
         sim_odds: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
-        Primary Live Trading Prediction Engine powered by DeepSeek Flash MaaS (Vertex AI).
-        Ingests the massive multi-timeframe market context (~50,000+ tokens) and outputs
-        compact, verified intraday trade recommendations for live execution.
-        Falls back to Claude Opus 4.6 Thinking (Antigravity Pro) if quota, network, or timeout occurs.
+        Veto-only AI filter powered by DeepSeek Flash MaaS (Vertex AI).
+
+        The deterministic momentum engine has already fixed the trade
+        geometry. DeepSeek only answers EXECUTE or PASS. If there is no
+        deterministic setup, no AI call is made at all (token savings).
+        Falls back to Claude Opus 4.6 Thinking, then to the deterministic
+        engine, if the AI is unavailable.
         """
-        api_key = settings.GEMINI_API_KEY
-        if not api_key or api_key.startswith("your_") or not token_tracker.can_consume_tokens(estimated_prompt_tokens=35000, estimated_completion_tokens=300):
-            logger.info(f"DeepSeek token cap reached or unconfigured. Shifting to Claude Opus Thinking fallback for {symbol}...")
+        setup = self._extract_primary_setup(massive_context, orb_plan)
+        if not setup:
+            logger.info("No deterministic momentum setup for %s; skipping AI call.", symbol)
+            return self._no_setup_prediction(symbol, "deepseek_flash", "DeepSeek Flash MaaS")
+
+        api_key = settings.DEEPSEEK_API_KEY
+        if not api_key or api_key.startswith("your_") or not token_tracker.can_consume_tokens(estimated_prompt_tokens=900, estimated_completion_tokens=120):
+            logger.info("DeepSeek unavailable or token-capped; using Opus benchmark fallback for %s.", symbol)
             return await self._query_opus_antigravity_prediction(symbol, massive_context, orb_plan, sim_odds, account_id="deepseek_flash")
 
         client = create_genai_client(api_key, location="global")
-        model_id = "deepseek-ai/deepseek-v4.1-flash-maas"
+        model_id = settings.DEEPSEEK_MODEL
+
+        bars = massive_context.get("historical_5m_bars_with_indicators", [])[-3:]
+        indicators = massive_context.get("intraday_confluence_evaluation", {}).get("indicators", {})
+        # Minimal payload: only what the hard-invalidation rules inspect.
+        # Dropping the full quote, breadth and long bar history cuts prompt
+        # tokens (and therefore cost/latency) with no change in the decision.
+        veto_payload = {
+            "symbol": symbol,
+            "strategy": setup["strategy"],
+            "fixed_geometry": {
+                "entry_price_inr": setup["entry_price"],
+                "stop_loss_inr": setup["stop_loss"],
+                "hold_to_close": setup["hold_to_close"],
+            },
+            "opening_range": {"or_high": setup["or_high"], "or_low": setup["or_low"]},
+            "current_price_inr": setup["entry_price"],
+            "vwap": indicators.get("vwap"),
+            "last_3_bars_5m": bars,
+        }
 
         prompt_text = (
             f"{PREDICTOR_SYSTEM_PROMPT}\n\n"
-            f"=== FULL MARKET CONTEXT & MULTI-TIMEFRAME DATA (Symbol: {symbol}) ===\n"
-            f"{json.dumps(massive_context)}\n\n"
-            f"Analyze the entire historical candle series, Camarilla levels, indicators, and empirical axioms. "
-            f"Produce your final intraday trading recommendation. Return strictly a raw JSON object."
+            f"=== FIXED SETUP + RECENT CONTEXT (Symbol: {symbol}) ===\n"
+            f"{json.dumps(veto_payload, default=str)}\n\n"
+            f"The deterministic engine has fixed the entry and stop. "
+            f"Answer EXECUTE or PASS only. Return strictly a raw JSON object."
         )
 
         try:
-            config = types.GenerateContentConfig(temperature=0.2)
+            config = types.GenerateContentConfig(temperature=0.1)
             response = await asyncio.wait_for(
                 client.aio.models.generate_content(
                     model=model_id,
@@ -420,29 +622,63 @@ class ArgonPredictor:
 
             m = re.search(r"\{.*\}", text_resp, re.DOTALL)
             clean_text = m.group(0) if m else text_resp
+            ai_data = json.loads(clean_text)
 
-            pred_data = json.loads(clean_text)
-            pred_data["account_id"] = "deepseek_flash"
-            pred_data["model"] = "DeepSeek Flash MaaS"
-            pred_data["timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            pred_data["timeframe"] = pred_data.get("timeframe", "5-15 Min Scalp")
+            decision = str(ai_data.get("decision", "PASS")).strip().upper()
+            if decision not in ("EXECUTE", "PASS"):
+                decision = "PASS"
+            if decision == "PASS":
+                # The AI may only veto on a HARD invalidation. If the
+                # deterministic guard finds none, the veto is a weak signal
+                # (low volume, "stalling", high RSI) and is downgraded so it
+                # cannot destroy the validated momentum edge.
+                hard = hard_invalidation(
+                    setup,
+                    indicators,
+                    bars,
+                )
+                if hard is None:
+                    logger.info(
+                        "DeepSeek veto on %s downgraded (no hard invalidation): %s",
+                        symbol, ai_data.get("reasoning", ""),
+                    )
+                    decision = "EXECUTE"
+            conf = int(ai_data.get("confidence_pct", setup.get("confidence", 88)) or setup.get("confidence", 88))
+            conf = max(50, min(95, conf))
+            reasoning = str(ai_data.get("reasoning", ""))[:300]
 
-            p_toks = getattr(response.usage_metadata, "prompt_token_count", 35000) if hasattr(response, "usage_metadata") else 35000
-            c_toks = getattr(response.usage_metadata, "candidates_token_count", 250) if hasattr(response, "usage_metadata") else 250
-            token_tracker.log_usage("predictor_deepseek_flash", model_id, p_toks, c_toks)
-            pred_data["tokens_used"] = p_toks + c_toks
+            p_toks = getattr(response.usage_metadata, "prompt_token_count", 1500) if hasattr(response, "usage_metadata") else 1500
+            c_toks = getattr(response.usage_metadata, "candidates_token_count", 120) if hasattr(response, "usage_metadata") else 120
+            token_tracker.log_usage(
+                "predictor_deepseek_flash", model_id, p_toks, c_toks,
+                account_id="deepseek_flash",
+            )
 
-            db.record_prediction(pred_data)
-            logger.info(f"⚡ DeepSeek Flash MaaS prediction generated for {symbol}: {pred_data.get('signal')} ({pred_data.get('confidence_pct')}%) [{p_toks} prompt tokens consumed]")
-            return pred_data
+            pred = self._build_veto_prediction(
+                symbol=symbol,
+                account_id="deepseek_flash",
+                model_name="DeepSeek Flash MaaS",
+                setup=setup,
+                decision=decision,
+                confidence_pct=conf,
+                reasoning=reasoning,
+                tokens_used=p_toks + c_toks,
+            )
+            logger.info(
+                "⚡ DeepSeek veto for %s: %s (%s%%) [%s prompt tokens]",
+                symbol, decision, conf, p_toks,
+            )
+            return pred
 
         except Exception as e:
             logger.error(f"DeepSeek Flash MaaS query error for {symbol}: {e}. Triggering Claude Opus Antigravity fallback...")
             try:
                 return await self._query_opus_antigravity_prediction(symbol, massive_context, orb_plan, sim_odds, account_id="deepseek_flash")
             except Exception as opus_err:
-                logger.error(f"Claude Opus fallback failed: {opus_err}. Using algorithmic fallback.")
-                return self._generate_algorithmic_fallback(symbol, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
+                logger.error(f"Claude Opus fallback failed: {opus_err}. Using deterministic engine.")
+                return self._deterministic_setup_prediction(
+                    symbol, "deepseek_flash", "DeepSeek Flash MaaS (Deterministic)", setup
+                )
 
     async def _query_opus_prediction(
         self,
@@ -456,7 +692,9 @@ class ArgonPredictor:
         Evaluates intraday setups with deep quantitative reasoning.
         Falls back to DeepSeek Flash MaaS or Algorithmic setup if quota or network issue occurs.
         """
-        return await self._query_opus_antigravity_prediction(symbol, massive_context, orb_plan, sim_odds, account_id="gemini_flash")
+        return await self._query_opus_antigravity_prediction(
+            symbol, massive_context, orb_plan, sim_odds, account_id="opus_flash"
+        )
 
     async def _query_opus_antigravity_prediction(
         self,
@@ -464,12 +702,20 @@ class ArgonPredictor:
         massive_context: Dict[str, Any],
         orb_plan: Dict[str, Any],
         sim_odds: Dict[str, Any],
-        account_id: str = "gemini_flash",
+        account_id: str = "opus_flash",
     ) -> Dict[str, Any]:
+        """Claude Opus 4.6 Thinking veto filter through the local Antigravity CLI.
+
+        Opus uses the SAME veto-only architecture as DeepSeek: the
+        deterministic engine owns the geometry and Opus may only answer
+        EXECUTE or PASS. This keeps the benchmark account on the validated
+        edge instead of letting it invent its own stop/target.
         """
-        Institutional Benchmark & High-Reliability Fallback using Claude Opus 4.6 Thinking via Antigravity credentials.
-        Consumes $0.00 / ₹0.00 Google Cloud API tokens.
-        """
+        setup = self._extract_primary_setup(massive_context, orb_plan)
+        if not setup:
+            logger.info("No deterministic momentum setup for %s; skipping Opus call.", symbol)
+            return self._no_setup_prediction(symbol, account_id, "Claude Opus 4.6 Thinking")
+
         candidate_bins = [
             shutil.which("agy"),
             "/usr/local/bin/agy",
@@ -480,42 +726,35 @@ class ArgonPredictor:
         agy_bin = next((b for b in candidate_bins if b and os.path.exists(b)), None)
         fallback_model_name = "Claude Opus 4.6 Thinking (Antigravity Fallback)" if account_id == "deepseek_flash" else "Claude Opus 4.6 Thinking (Antigravity)"
         if not agy_bin:
-            return self._generate_algorithmic_fallback(symbol, account_id, f"{fallback_model_name} (Unavailable)", orb_plan, sim_odds)
+            return self._deterministic_setup_prediction(
+                symbol, account_id, f"{fallback_model_name} (Unavailable)", setup
+            )
 
-        # Condensed high-density setup summary tailored for the CLI prompt
-        bars_snippet = massive_context.get("historical_5m_bars_with_indicators", [])[-25:]
-        summary_payload = {
+        bars = massive_context.get("historical_5m_bars_with_indicators", [])[-3:]
+        indicators = massive_context.get("intraday_confluence_evaluation", {}).get("indicators", {})
+        veto_payload = {
             "symbol": symbol,
-            "live_quote": massive_context.get("live_quote"),
-            "institutional_pivot_levels": massive_context.get("institutional_pivot_levels"),
-            "recent_25_candles_5m": bars_snippet,
-            "day_trader_skill_setup": massive_context.get("day_trader_skill_setup"),
-            "market_breadth": massive_context.get("market_breadth_and_volatility"),
-            "empirical_strategy_axioms": massive_context.get("empirical_strategy_axioms")[:4],
+            "strategy": setup["strategy"],
+            "fixed_geometry": {
+                "entry_price_inr": setup["entry_price"],
+                "stop_loss_inr": setup["stop_loss"],
+                "hold_to_close": setup["hold_to_close"],
+            },
+            "opening_range": {"or_high": setup["or_high"], "or_low": setup["or_low"]},
+            "current_price_inr": setup["entry_price"],
+            "vwap": indicators.get("vwap"),
+            "last_3_bars_5m": bars,
         }
 
         prompt_text = (
-            f"You are the Lead Quantitative Intraday Strategist for Indian Equities (NSE/BSE).\n"
-            f"Analyze this live market context for {symbol} and generate an intraday trade recommendation.\n"
-            f"Return strictly a single JSON object with these exact keys:\n"
-            f"  'signal': 'BUY', 'SELL', or 'HOLD'\n"
-            f"  'symbol': '{symbol}'\n"
-            f"  'confidence_pct': integer between 50 and 99\n"
-            f"  'current_price_inr': float\n"
-            f"  'entry_zone_inr': string\n"
-            f"  'target_1_inr': float profit target (at least 1.3R)\n"
-            f"  'target_2_inr': float extended target\n"
-            f"  'stop_loss_inr': float protective stop loss\n"
-            f"  'risk_reward_ratio': string e.g. '1:1.5'\n"
-            f"  'timeframe': string\n"
-            f"  'catalyst': brief technical/order-flow rationale\n"
-            f"  'key_risks': brief sentence highlighting primary risk\n"
-            f"  'action_summary': direct trade action instruction\n"
-            f"Do not include markdown prose outside the JSON.\n\n"
-            f"Market Setup Payload:\n{json.dumps(summary_payload)}"
+            f"{PREDICTOR_SYSTEM_PROMPT}\n\n"
+            f"=== FIXED SETUP + RECENT CONTEXT (Symbol: {symbol}) ===\n"
+            f"{json.dumps(veto_payload, default=str)}\n\n"
+            f"The deterministic engine has fixed the entry and stop. "
+            f"Answer EXECUTE or PASS only. Return strictly a raw JSON object."
         )
 
-        models_to_try = ["claude-opus-4-6-thinking", "claude-sonnet-4-6"]
+        models_to_try = [settings.OPUS_MODEL]
         for model_cand in models_to_try:
             try:
                 proc = await asyncio.create_subprocess_exec(
@@ -528,18 +767,38 @@ class ArgonPredictor:
                 if proc.returncode == 0 and out_text:
                     m = re.search(r"\{.*\}", out_text, re.DOTALL)
                     if m:
-                        pred_data = json.loads(m.group(0))
-                        pred_data["account_id"] = account_id
-                        model_label = "Claude Opus 4.6 Thinking (Antigravity)" if "opus" in model_cand else f"Claude Sonnet 4.6 (Antigravity)"
+                        ai_data = json.loads(m.group(0))
+                        decision = str(ai_data.get("decision", "PASS")).strip().upper()
+                        if decision not in ("EXECUTE", "PASS"):
+                            decision = "PASS"
+                        if decision == "PASS":
+                            hard = hard_invalidation(setup, indicators, bars)
+                            if hard is None:
+                                logger.info(
+                                    "Opus veto on %s downgraded (no hard invalidation): %s",
+                                    symbol, ai_data.get("reasoning", ""),
+                                )
+                                decision = "EXECUTE"
+                        conf = int(ai_data.get("confidence_pct", setup.get("confidence", 88)) or setup.get("confidence", 88))
+                        conf = max(50, min(95, conf))
+                        model_label = "Claude Opus 4.6 Thinking (Antigravity)" if "opus" in model_cand else "Claude Sonnet 4.6 (Antigravity)"
                         if account_id == "deepseek_flash":
-                            model_label = f"DeepSeek (Opus Fallback)"
-                        pred_data["model"] = model_label
-                        pred_data["timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                        pred_data["timeframe"] = pred_data.get("timeframe", "5-15 Min Scalp")
-                        pred_data["tokens_used"] = 0  # 0 cloud billing tokens!
-                        db.record_prediction(pred_data)
-                        logger.info(f"🏛️ Antigravity [{account_id}] prediction generated via {model_cand} for {symbol} (0 cloud credits consumed).")
-                        return pred_data
+                            model_label = "DeepSeek (Opus Fallback)"
+                        pred = self._build_veto_prediction(
+                            symbol=symbol,
+                            account_id=account_id,
+                            model_name=model_label,
+                            setup=setup,
+                            decision=decision,
+                            confidence_pct=conf,
+                            reasoning=str(ai_data.get("reasoning", ""))[:300],
+                            tokens_used=0,  # 0 cloud billing tokens
+                        )
+                        logger.info(
+                            "Antigravity [%s] veto for %s: %s (%s%%) via %s (0 cloud credits).",
+                            account_id, symbol, decision, conf, model_cand,
+                        )
+                        return pred
                 err_text = stderr.decode("utf-8") if stderr else ""
                 if "quota" in err_text.lower() or "rate" in err_text.lower() or "limit" in err_text.lower() or "429" in err_text:
                     logger.warning(f"Antigravity quota limit on {model_cand}: {err_text[:120]}.")
@@ -548,7 +807,9 @@ class ArgonPredictor:
                 logger.warning(f"Antigravity query exception on {model_cand}: {e}.")
                 break
 
-        return self._generate_algorithmic_fallback(symbol, account_id, f"{fallback_model_name} (Fallback)", orb_plan, sim_odds)
+        return self._deterministic_setup_prediction(
+            symbol, account_id, f"{fallback_model_name} (Fallback)", setup
+        )
 
     async def run_arena_cycle(self, target_symbol: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -560,6 +821,15 @@ class ArgonPredictor:
         5. Auto-executes approved trades exclusively from DeepSeek Flash.
         6. Returns comparative Arena results.
         """
+        if not market_hours.is_entry_window():
+            status = market_hours.get_market_status()
+            logger.info("Arena cycle skipped outside entry window: %s", status["description"])
+            return {
+                "status": "SKIPPED_MARKET_CLOSED",
+                "reason": status["description"],
+                "market_status": status,
+            }
+
         if not target_symbol:
             try:
                 scanned = await asyncio.wait_for(scanner.scan_market(limit=5), timeout=15.0)
@@ -602,9 +872,13 @@ class ArgonPredictor:
         except Exception:
             news = {"articles": []}
 
-        # Day-trader-skill ORB calculation & Time Machine Odds
-        orb_plan = day_trader.calculate_orb_plan(sym, price, [])
-        sim_odds = day_trader.run_time_machine_simulation(sym, price, orb_plan["stop_loss"], orb_plan["target_2"])
+        # Day-trader ORB uses the actual first three 5-minute bars of today.
+        df_5m, _ = self._load_market_frames(sym)
+        orb_bars = self._today_orb_bars(df_5m)
+        orb_plan = day_trader.calculate_orb_plan(sym, price, orb_bars)
+        sim_odds = day_trader.run_time_machine_simulation(
+            sym, price, orb_plan["stop_loss"], orb_plan["target_2"], bars=orb_bars
+        )
 
         # Real-time Sentiment Intelligence
         try:
@@ -658,20 +932,29 @@ class ArgonPredictor:
             )
             res_deepseek, res_opus = results[0], results[1]
         except asyncio.TimeoutError:
-            logger.error(f"Arena parallel queries for {sym} timed out after 110s. Utilizing fallback setups.")
-            res_deepseek = self._generate_algorithmic_fallback(sym, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
-            res_opus = self._generate_algorithmic_fallback(sym, "gemini_flash", "Claude Opus 4.6 Thinking (Fallback)", orb_plan, sim_odds)
+            logger.error("Arena parallel queries for %s timed out.", sym)
+            res_deepseek = self._generate_algorithmic_fallback(
+                sym, "deepseek_flash", "DeepSeek 4.1 Flash (Fallback)", orb_plan, sim_odds, massive_context
+            )
+            res_opus = self._generate_algorithmic_fallback(
+                sym, "opus_flash", "Claude Opus 4.6 Thinking (Fallback)", orb_plan, sim_odds, massive_context
+            )
 
-        pred_deepseek = res_deepseek if not isinstance(res_deepseek, Exception) else self._generate_algorithmic_fallback(sym, "deepseek_flash", "DeepSeek Flash MaaS (Fallback)", orb_plan, sim_odds)
-        pred_opus = res_opus if not isinstance(res_opus, Exception) else self._generate_algorithmic_fallback(sym, "gemini_flash", "Claude Opus 4.6 Thinking (Fallback)", orb_plan, sim_odds)
+        pred_deepseek = res_deepseek if not isinstance(res_deepseek, Exception) else self._generate_algorithmic_fallback(
+            sym, "deepseek_flash", "DeepSeek 4.1 Flash (Fallback)", orb_plan, sim_odds, massive_context
+        )
+        pred_opus = res_opus if not isinstance(res_opus, Exception) else self._generate_algorithmic_fallback(
+            sym, "opus_flash", "Claude Opus 4.6 Thinking (Fallback)", orb_plan, sim_odds, massive_context
+        )
 
         self.deepseek_last_prediction = pred_deepseek
-        self.gemini_last_prediction = pred_opus
-        self.last_prediction = pred_deepseek  # DeepSeek Flash is the primary live trading reference
+        self.opus_last_prediction = pred_opus
+        self.last_prediction = pred_deepseek
+        self.prediction_history.insert(0, pred_deepseek)
+        self.prediction_history = self.prediction_history[:20]
 
-        # Auto-Execution: Execute approved trades for both live agent accounts
         await self._handle_auto_execution("deepseek_flash", pred_deepseek)
-        await self._handle_auto_execution("gemini_flash", pred_opus)
+        await self._handle_auto_execution("opus_flash", pred_opus)
 
         # Arena comparative summary
         arena_summary = db.get_arena_comparison()
@@ -681,7 +964,6 @@ class ArgonPredictor:
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "symbol": sym,
             "opus_prediction": pred_opus,
-            "gemini_prediction": pred_opus,  # Backward compatibility for frontend binding
             "deepseek_prediction": pred_deepseek,
             "arena": arena_summary,
             "next_run_timestamp": self.next_run_timestamp,
@@ -696,137 +978,144 @@ class ArgonPredictor:
         model_name: str,
         orb_plan: Dict[str, Any],
         sim_odds: Dict[str, Any],
+        massive_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """High-probability algorithmic prediction consuming 0 tokens using Day Trader Skill & Quant Confluence rules."""
-        price = orb_plan.get("entry_price") or cache.get_price(symbol)
-        if not price or price <= 0:
-            q = get_indian_stock_quote(symbol)
-            price = q.get("current_price", 0.0)
+        """Deterministic fallback consuming 0 tokens.
 
-        # Check technical indicators & confluence from bar cache
-        cached = self._bar_cache.get(symbol)
-        confluence_eval = {}
-        if cached and hasattr(cached.get("df_5m"), "empty") and not cached["df_5m"].empty:
-            df_5m = cached["df_5m"]
-            bars_list = df_5m.tail(30).to_dict(orient="records")
-            confluence_eval = intraday_engine.evaluate_all_strategies(bars_list)
+        This path must stay on the validated edge. It extracts the SAME
+        momentum-continuation setup the AI layer would have vetoed and
+        executes it directly (or returns a neutral HOLD when no setup
+        exists). It never falls back to the legacy confluence engine, which
+        has no positive expectancy after costs.
+        """
+        setup = None
+        if massive_context:
+            setup = self._extract_primary_setup(massive_context, orb_plan)
+        if not setup:
+            # Rebuild the context from the bar cache if the caller did not
+            # supply one, so the fallback still sees the momentum engine.
+            cached = self._bar_cache.get(symbol)
+            if cached and hasattr(cached.get("df_5m"), "empty") and not cached["df_5m"].empty:
+                try:
+                    df_clean = cached["df_5m"].reset_index().rename(columns={
+                        "Datetime": "timestamp", "Date": "timestamp",
+                        "Open": "open", "High": "high", "Low": "low",
+                        "Close": "close", "Volume": "volume",
+                    })
+                    df_ind = intraday_engine.compute_technical_indicators(df_clean)
+                    bars_series = []
+                    for _, r in df_ind.tail(250).iterrows():
+                        bars_series.append({
+                            "time": str(r.get("timestamp", ""))[:16],
+                            "o": round(float(r.get("open", 0)), 2),
+                            "h": round(float(r.get("high", 0)), 2),
+                            "l": round(float(r.get("low", 0)), 2),
+                            "c": round(float(r.get("close", 0)), 2),
+                            "v": int(r.get("volume", 0)),
+                            "vwap": round(float(r.get("vwap", 0)), 2),
+                        })
+                    confluence_eval = intraday_engine.evaluate_all_strategies(bars_series)
+                    setup = self._extract_primary_setup(
+                        {"intraday_confluence_evaluation": confluence_eval}, orb_plan
+                    )
+                except Exception as e:
+                    logger.debug("Fallback context rebuild failed for %s: %s", symbol, e)
 
-        best = confluence_eval.get("best_strategy")
-        comp_signal = confluence_eval.get("composite_signal", "HOLD")
+        if not setup:
+            return self._no_setup_prediction(symbol, account_id, model_name)
 
-        if best and comp_signal in ("BUY", "SELL"):
-            sig = comp_signal
-            conf = int(best.get("confidence", 85))
-            sl = float(best.get("stop_loss", price * 0.992))
-            tp1 = float(best.get("target_1", price * 1.014))
-            tp2 = float(best.get("target_2", price * 1.020))
-            cat = best.get("rationale", f"{best.get('name')} active quantitative trigger.")
-            action_desc = f"Execute {sig} on {symbol} via {best.get('name')} (Target: ₹{tp1:.2f}, SL: ₹{sl:.2f})."
-        else:
-            should_buy = (sim_odds.get("recommendation") == "EXECUTE") and (price > 0)
-            sig = "BUY" if should_buy else "HOLD"
-            conf = int(sim_odds.get("win_rate_pct", 75.0)) if should_buy else 50
-            sl = orb_plan.get("stop_loss", price * 0.992)
-            tp1 = orb_plan.get("target_1", price * 1.014)
-            tp2 = orb_plan.get("target_2", price * 1.020)
-            cat = f"ORB Strategy: Midpoint Stop ₹{sl:.2f} with {sim_odds.get('verdict', 'Neutral')}."
-            action_desc = f"Place Scalp on {symbol}." if should_buy else "Awaiting directional breakout."
-
-        pred = {
-            "account_id": account_id,
-            "signal": sig,
-            "symbol": symbol,
-            "confidence_pct": conf,
-            "current_price_inr": price,
-            "entry_zone_inr": f"{price - 1.0:.1f} - {price + 1.0:.1f}" if price > 0 else "N/A",
-            "target_1_inr": tp1,
-            "target_2_inr": tp2,
-            "stop_loss_inr": sl,
-            "risk_reward_ratio": "1:1.4",
-            "timeframe": "5-15 Min Scalp",
-            "catalyst": cat,
-            "key_risks": "Break below protective stop loss invalidates trade.",
-            "action_summary": action_desc,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "model": model_name,
-            "tokens_used": 0,
-        }
-        db.record_prediction(pred)
-        return pred
+        return self._deterministic_setup_prediction(symbol, account_id, model_name, setup)
 
     async def _handle_auto_execution(self, account_id: str, pred: Dict[str, Any]):
-        """Executes automated trades when confidence is >= 55% on the designated agent account."""
-        from app.trading.strategy_manager import strategy_manager
+        """Execute a long entry or a protective exit, subject to all risk gates."""
         acc_state = db.get_account_state(account_id)
-        is_auto = bool(acc_state.get("auto_execute", self.auto_execute))
-
-        if not is_auto:
+        if not bool(acc_state.get("auto_execute", self.auto_execute)):
+            return
+        if not market_hours.is_entry_window():
             return
 
         signal = pred.get("signal")
-        conf = pred.get("confidence_pct", 0)
-        sym = pred.get("symbol")
-
-        if not sym or signal not in ["BUY", "SELL"]:
+        conf = int(pred.get("confidence_pct", 0) or 0)
+        sym = (pred.get("symbol") or "").strip().upper()
+        if not sym or signal not in ("BUY", "SELL"):
             return
 
-        # High-probability threshold (>= 55%)
-        if conf >= 55:
-            if strategy_manager.is_market_open():
-                price = cache.get_price(sym)
-                if not price or price <= 0:
-                    quote = get_indian_stock_quote(sym)
-                    if quote.get("success") and quote.get("current_price", 0) > 0:
-                        price = quote["current_price"]
-                if not price or price <= 0:
-                    logger.warning(f"[{account_id}] Auto-trade on {sym} skipped: no verified live exchange price available.")
-                    return
+        # Veto-only flow: the deterministic engine owns the setup and the AI
+        # only votes EXECUTE/PASS. A valid EXECUTE vote must not be dropped by
+        # a low confidence number, so gate on the decision itself. Legacy
+        # (non-veto) predictions still fall back to the confidence gate.
+        ai_decision = str(pred.get("ai_decision", "") or "").strip().upper()
+        if ai_decision:
+            if ai_decision != "EXECUTE":
+                logger.info(
+                    "[%s] AI vetoed %s (%s); no entry.", account_id, sym, ai_decision
+                )
+                return
+        elif conf < settings.MIN_CONFIDENCE:
+            return
 
-                available_cash = float(acc_state.get("available_cash", 10000.0))
+        acc = execution_engine.get_account(account_id)
+        price = cache.get_price(sym)
+        if not price or price <= 0:
+            quote = get_indian_stock_quote(sym)
+            if quote.get("success") and quote.get("current_price", 0) > 0:
+                price = float(quote["current_price"])
+                cache.set_price(sym, price)
+        if not price or price <= 0:
+            logger.warning("[%s] No verified price for %s; auto-trade skipped.", account_id, sym)
+            return
 
-                if signal == "BUY":
-                    stop_loss_val = pred.get("stop_loss_inr") or round(price * 0.992, 2)
-                    target_val = pred.get("target_1_inr") or round(price * 1.014, 2)
+        if signal == "SELL":
+            # Long-only paper account: SELL closes an existing holding, never shorts.
+            if sym in acc.positions:
+                order = await execution_engine.fast_execute_order(
+                    symbol=sym,
+                    action="SELL",
+                    quantity=acc.positions[sym].quantity,
+                    order_type="MARKET",
+                    strategy_name=f"{account_id}_alpha_strategy",
+                    account_id=account_id,
+                    exit_reason="model_exit",
+                )
+                logger.info("[%s] Auto SELL %s: %s", account_id, sym, order.get("status"))
+            return
 
-                    budget = day_trader.calculate_budget_size(
-                        initial_capital=float(acc_state.get("initial_capital", 10000.0)),
-                        available_cash=available_cash,
-                        entry_price=price,
-                        stop_loss=stop_loss_val,
-                    )
-                    qty = budget.get("quantity", 0)
-                    if qty <= 0:
-                        alloc = min(available_cash, 7000.0)
-                        qty = max(1, int(alloc // price)) if available_cash >= price else 0
+        stop_loss_val = float(pred.get("stop_loss_inr") or price * 0.992)
+        target_val = float(pred.get("target_1_inr") or price * 1.014)
+        hold_to_close = bool(pred.get("hold_to_close", False))
+        if stop_loss_val >= price:
+            stop_loss_val = round(price * 0.992, 2)
+        if target_val <= price:
+            target_val = round(price * 1.014, 2)
 
-                    if qty > 0 and available_cash >= (price * qty):
-                        order = await execution_engine.fast_execute_order(
-                            symbol=sym,
-                            action="BUY",
-                            quantity=qty,
-                            order_type="MARKET",
-                            strategy_name=f"{account_id}_alpha_strategy",
-                            account_id=account_id,
-                            stop_loss=stop_loss_val,
-                            target_price=target_val,
-                        )
-                        logger.info(f"⚡ [{account_id}] Live Auto-executed BUY {qty} {sym} @ ₹{price} (SL: ₹{stop_loss_val}, TP: ₹{target_val}): {order.get('status')}")
-                elif signal == "SELL":
-                    summary = execution_engine.get_portfolio_summary(account_id)
-                    held_pos = next((p for p in summary.get("positions", []) if p.get("symbol") == sym), None)
-                    if held_pos and held_pos.get("quantity", 0) > 0:
-                        qty = held_pos["quantity"]
-                        order = await execution_engine.fast_execute_order(
-                            symbol=sym,
-                            action="SELL",
-                            quantity=qty,
-                            order_type="MARKET",
-                            strategy_name=f"{account_id}_alpha_strategy",
-                            account_id=account_id,
-                        )
-                        logger.info(f"⚡ [{account_id}] Live Auto-executed SELL {qty} {sym} @ ₹{price}: {order.get('status')}")
-            else:
-                logger.info(f"[{account_id}] Auto-trade signal {signal} on {sym} ({conf}%) held: Market is currently closed.")
+        budget = day_trader.calculate_budget_size(
+            initial_capital=float(acc.initial_capital),
+            available_cash=float(acc.available_cash),
+            entry_price=price,
+            stop_loss=stop_loss_val,
+            max_loss_pct=settings.RISK_PER_TRADE_PCT / 100.0,
+            max_position_pct=settings.MAX_POSITION_PCT,
+        )
+        qty = int(budget.get("quantity", 0))
+        if qty <= 0:
+            return
+
+        order = await execution_engine.fast_execute_order(
+            symbol=sym,
+            action="BUY",
+            quantity=qty,
+            order_type="MARKET",
+            strategy_name=f"{account_id}_alpha_strategy",
+            account_id=account_id,
+            stop_loss=stop_loss_val,
+            target_price=target_val,
+            hold_to_close=hold_to_close,
+        )
+        logger.info(
+            "[%s] Auto BUY %s x%d @ market ₹%.2f (SL ₹%.2f, TP ₹%.2f, hold_to_close=%s): %s %s",
+            account_id, sym, qty, price, stop_loss_val, target_val, hold_to_close,
+            order.get("status"), order.get("reason", ""),
+        )
 
     async def generate_prediction(self, target_symbol: Optional[str] = None) -> Dict[str, Any]:
         """Wrapper for single target symbol triggered on-demand."""
@@ -844,8 +1133,10 @@ class ArgonPredictor:
             "model": "Emergency-Guard",
         }
         if decision.get("action") == "EMERGENCY_EXIT":
-            await execution_engine.close_position(symbol, account_id="gemini_flash")
-            await execution_engine.close_position(symbol, account_id="deepseek_flash")
+            for account_id in ("opus_flash", "deepseek_flash"):
+                await execution_engine.close_position(
+                    symbol, account_id=account_id, reason="emergency_exit"
+                )
         return decision
 
 

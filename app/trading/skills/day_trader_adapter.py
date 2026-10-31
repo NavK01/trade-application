@@ -1,5 +1,5 @@
 """
-Day Trader Skill Adapter for Gemini Quant Platform.
+Day Trader Skill Adapter for the Quant Platform.
 Directly implements algorithms from Jakeschincariol/day-trader-skill:
 - trader-entry: Opening Range Breakout (ORB-15m) trigger levels
 - trader-exit: Midpoint stop-loss & multi-tier R-targets (1R, 1.5R, 2R) with flat-by-market-close

@@ -262,6 +262,7 @@ Do not invent data. Do not return stop or target fields."""
         time_filter: bool = True,
         primary_only: bool = True,
         strategy_override: Optional[Any] = None,
+        ai_cost_hook: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         primary_only: when True (default), entries are restricted to the
@@ -277,7 +278,16 @@ Do not invent data. Do not return stop or target fields."""
         interval) -> setup_dict`` used INSTEAD of the built-in suite. It lets a
         research runner test an alternative strategy through the exact same
         execution, sizing, fee, and AI-veto machinery. When None (the default)
-        the shipped suite is used and live behaviour is unchanged.
+        the shipped suite is used and live behaviour is unchanged. The callable
+        may be a coroutine function (e.g. an AI-decides strategy that awaits a
+        model call); it is awaited transparently.
+
+        ai_cost_hook: optional zero-argument callable returning the cumulative
+        AI cost (in INR) incurred by a ``strategy_override``. The override path
+        does not go through the veto path's cost accounting, so a research
+        runner that makes its own model calls passes this hook to have that
+        spend charged against the result. When None (the default) nothing is
+        charged and live behaviour is unchanged.
         """
         hourly = interval in ("1h", "60m", "90m")
         # Minimum bars required for a day to be tradable. 5m sessions have 75
@@ -458,11 +468,19 @@ Do not invent data. Do not return stop or target fields."""
                         # Research path: the override owns signal generation and
                         # returns a setup dict (or None). Execution, sizing, fees
                         # and the AI veto below are identical to the shipped path.
+                        # The override signature has no symbol argument, so tag
+                        # each record with it; an override that needs the symbol
+                        # (e.g. an AI-decides strategy) can read it from the
+                        # history it is handed.
+                        for _rec in history:
+                            _rec["symbol"] = sym
                         best = strategy_override(
                             history,
                             prior_day.get(sym, {}).get(date_str),
                             interval,
                         )
+                        if asyncio.iscoroutine(best):
+                            best = await best
                         if not best or not best.get("active"):
                             continue
                         eval_res = {
@@ -638,6 +656,23 @@ Do not invent data. Do not return stop or target fields."""
         losses = [t for t in trades if t["net_pnl"] <= 0]
         gross_pnl = round(sum(t["gross_pnl"] for t in trades), 2)
         fees = round(sum(t["fees_inr"] for t in trades), 2)
+        # A strategy_override that makes its own model calls reports its
+        # cumulative spend through ai_cost_hook; charge it like the veto path.
+        if ai_cost_hook is not None:
+            try:
+                override_cost = float(ai_cost_hook() or 0.0)
+            except Exception as exc:
+                logger.warning("ai_cost_hook failed: %s", exc)
+                override_cost = 0.0
+            if override_cost > 0:
+                ai_cost_total += override_cost
+                if daily_results:
+                    daily_results[-1]["ai_cost_inr"] = round(
+                        daily_results[-1]["ai_cost_inr"] + override_cost, 2
+                    )
+                    daily_results[-1]["net_after_ai_inr"] = round(
+                        daily_results[-1]["net_after_ai_inr"] - override_cost, 2
+                    )
         net_before_ai = round(gross_pnl - fees, 2)
         net_after_ai = round(net_before_ai - ai_cost_total, 2)
         win_rate = round(len(wins) / total_trades * 100, 1) if total_trades else 0.0

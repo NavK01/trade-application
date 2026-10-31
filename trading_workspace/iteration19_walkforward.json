@@ -1,0 +1,41 @@
+{
+  "split_date": "2026-04-15",
+  "halves": {
+    "H1": {
+      "baseline_off": {
+        "trades": 29,
+        "win_rate": 41.4,
+        "gross": 469.35,
+        "fees": 239.21,
+        "net": 230.14,
+        "pf": 1.46
+      },
+      "gate_25": {
+        "trades": 25,
+        "win_rate": 44.0,
+        "gross": 557.55,
+        "fees": 202.31,
+        "net": 355.24,
+        "pf": 1.84
+      }
+    },
+    "H2": {
+      "baseline_off": {
+        "trades": 30,
+        "win_rate": 36.7,
+        "gross": -120.24,
+        "fees": 261.85,
+        "net": -382.09,
+        "pf": 0.44
+      },
+      "gate_25": {
+        "trades": 27,
+        "win_rate": 40.7,
+        "gross": -52.65,
+        "fees": 231.47,
+        "net": -284.12,
+        "pf": 0.52
+      }
+    }
+  }
+}

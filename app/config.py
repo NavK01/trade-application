@@ -69,8 +69,10 @@ class Settings(BaseSettings):
     # Fee-to-risk ceiling. Reject a candidate when round-trip transaction cost
     # exceeds this percentage of the rupee risk budget (entry-stop)*qty. Small
     # positions and tight stops cannot amortise the fixed cost, so they are fee
-    # sinks. 100.0 disables the filter.
-    MAX_FEE_TO_RISK_PCT: float = float(os.getenv("MAX_FEE_TO_RISK_PCT", "100.0"))
+    # sinks. 100.0 disables the filter. Default 25 was walk-forward validated on
+    # 1y/1h data: it improved net P&L and profit factor in both halves of the
+    # sample by dropping fee-sink trades (e.g. low-priced ETFs).
+    MAX_FEE_TO_RISK_PCT: float = float(os.getenv("MAX_FEE_TO_RISK_PCT", "25.0"))
 
     # Security & Dashboard Login Authentication
     AUTH_ENABLED: bool = os.getenv("AUTH_ENABLED", "true").lower() in ("true", "1", "yes")

@@ -1,0 +1,12 @@
+{
+  "max_fee_to_risk_pct": 25.0,
+  "trades": 52,
+  "win_rate": 42.3,
+  "gross": 504.9,
+  "fees": 433.78,
+  "net": 71.12,
+  "net_pct": 0.71,
+  "pf": 1.07,
+  "max_dd": 3.87,
+  "ending_capital": 10071.12
+}

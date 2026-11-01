@@ -104,7 +104,7 @@ settings = Settings()
 # Ensure workspace directory exists
 settings.absolute_workspace_dir.mkdir(parents=True, exist_ok=True)
 
-DEFAULT_ACCOUNT_ID = "opus_flash"
+DEFAULT_ACCOUNT_ID = "deepseek_flash"
 ACCOUNT_IDS = ("opus_flash", "deepseek_flash")
 ACCOUNT_NAMES = {
     "opus_flash": "Claude Opus 4.6 Thinking",

@@ -1,8 +1,9 @@
 """
 Candlestick Chart Data Service for Professional Trading Panel.
 Provides historical OHLCV candle feeds (1m, 5m, 15m, 1h, 1D),
-calculates 20-EMA and VWAP overlays, and formats live execution markers
-for TradingView Lightweight Charts.
+calculates 20-EMA, 25-EMA, 200-EMA and VWAP overlays, automated 4-line mapping,
+Volume Profile (POC, VAH, VAL), Fibonacci zones, and formats live execution
+and liquidity sweep markers for TradingView Lightweight Charts.
 """
 
 import datetime
@@ -12,22 +13,30 @@ import yfinance as yf
 import pandas as pd
 
 from app.config import ACCOUNT_NAMES
+from app.financial_advisor.india_market import normalize_indian_symbol
 from app.storage.db import db
+from app.trading.institutional_engine import (
+    compute_premarket_4lines,
+    compute_volume_profile,
+    compute_fibonacci_zones,
+    detect_liquidity_sweeps_and_absorption,
+)
 
 logger = logging.getLogger("app.trading.candles")
 
 
 def get_symbol_candles(
-    symbol: str = "SBIN",
+    symbol: str = "NIFTY",
     interval: str = "5m",
     period: str = "5d"
 ) -> Dict[str, Any]:
     """
-    Fetches OHLCV candles, computes 20-EMA and VWAP overlays,
-    and attaches order execution markers from the trades database.
+    Fetches OHLCV candles, computes 20-EMA, 25-EMA, 200-EMA, and VWAP overlays,
+    computes 4-line pre-market levels, Volume Profile, Fibonacci zones,
+    and attaches order execution + liquidity sweep markers.
     """
     clean_sym = symbol.strip().upper()
-    yf_sym = clean_sym if ("." in clean_sym or "^" in clean_sym) else f"{clean_sym}.NS"
+    yf_sym = normalize_indian_symbol(clean_sym)
 
     # Sanitize interval & period combination for Yahoo Finance constraints
     intraday_sub_5m = ["1m", "2m"]
@@ -51,12 +60,21 @@ def get_symbol_candles(
         df = pd.DataFrame()
 
     candles = []
-    ema_line = []
+    ema20_line = []
+    ema25_line = []
+    ema200_line = []
     vwap_line = []
 
+    four_lines = {}
+    volume_profile = {}
+    fibonacci_zones = {}
+    sweep_markers = []
+
     if not df.empty:
-        # Calculate 20 EMA
+        # Calculate moving averages
         df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
+        df["EMA25"] = df["Close"].ewm(span=25, adjust=False).mean()
+        df["EMA200"] = df["Close"].ewm(span=min(200, max(10, len(df))), adjust=False).mean()
 
         # Calculate VWAP by day
         df["Date_Day"] = df.index.date
@@ -90,21 +108,60 @@ def get_symbol_candles(
             })
 
             if not pd.isna(row["EMA20"]):
-                ema_line.append({
-                    "time": ts,
-                    "value": round(float(row["EMA20"]), 2),
-                })
-
+                ema20_line.append({"time": ts, "value": round(float(row["EMA20"]), 2)})
+            if not pd.isna(row["EMA25"]):
+                ema25_line.append({"time": ts, "value": round(float(row["EMA25"]), 2)})
+            if not pd.isna(row["EMA200"]):
+                ema200_line.append({"time": ts, "value": round(float(row["EMA200"]), 2)})
             if not pd.isna(row["VWAP"]):
-                vwap_line.append({
-                    "time": ts,
-                    "value": round(float(row["VWAP"]), 2),
+                vwap_line.append({"time": ts, "value": round(float(row["VWAP"]), 2)})
+
+        # Compute Institutional Overlays
+        four_lines = compute_premarket_4lines(df)
+        volume_profile = compute_volume_profile(df)
+        fibonacci_zones = compute_fibonacci_zones(
+            df,
+            vah=volume_profile.get("VAH", 0.0),
+            val=volume_profile.get("VAL", 0.0)
+        )
+
+        # Detect Liquidity Sweeps
+        sweeps = detect_liquidity_sweeps_and_absorption(
+            df,
+            pdh=four_lines.get("PDH", 0.0),
+            pdl=four_lines.get("PDL", 0.0),
+            pdc=four_lines.get("PDC", 0.0),
+            swing_high=four_lines.get("SWING_1H_HIGH", 0.0),
+            swing_low=four_lines.get("SWING_1H_LOW", 0.0)
+        )
+
+        for sw in sweeps:
+            try:
+                sw_ts = int(pd.to_datetime(sw["timestamp"]).timestamp())
+            except Exception:
+                continue
+
+            if sw["type"] == "BEARISH_LIQUIDITY_SWEEP":
+                sweep_markers.append({
+                    "time": sw_ts,
+                    "position": "aboveBar",
+                    "color": "#f59e0b",
+                    "shape": "circle",
+                    "text": f"SWEEP: {sw['swept_level']} (Trap)",
+                })
+            else:
+                sweep_markers.append({
+                    "time": sw_ts,
+                    "position": "belowBar",
+                    "color": "#38bdf8",
+                    "shape": "circle",
+                    "text": f"SWEEP: {sw['swept_level']} (Absorb)",
                 })
 
     # Fetch executed trades for this symbol to overlay as markers
     trades = db.get_trades(limit=100)
     symbol_trades = [t for t in trades if t.get("symbol", "").upper() == clean_sym]
-    markers = []
+    trade_markers = []
 
     for t in symbol_trades:
         action = t.get("action", "BUY").upper()
@@ -120,7 +177,7 @@ def get_symbol_candles(
             continue
 
         if action == "BUY":
-            markers.append({
+            trade_markers.append({
                 "time": trade_ts,
                 "position": "belowBar",
                 "color": "#22c55e",
@@ -128,7 +185,7 @@ def get_symbol_candles(
                 "text": f"BUY {qty} @ ₹{price} ({acc})",
             })
         else:
-            markers.append({
+            trade_markers.append({
                 "time": trade_ts,
                 "position": "aboveBar",
                 "color": "#ef4444",
@@ -136,8 +193,8 @@ def get_symbol_candles(
                 "text": f"SELL {qty} @ ₹{price} ({acc})",
             })
 
-    # Ensure markers are sorted by time (required by Lightweight Charts)
-    markers.sort(key=lambda m: m["time"])
+    all_markers = sweep_markers + trade_markers
+    all_markers.sort(key=lambda m: m["time"])
 
     # Latest price summary
     latest_close = candles[-1]["close"] if candles else 0.0
@@ -153,8 +210,13 @@ def get_symbol_candles(
         "latest_price": latest_close,
         "change_percent": chg_pct,
         "candles": candles,
-        "ema20": ema_line,
+        "ema20": ema20_line,
+        "ema25": ema25_line,
+        "ema200": ema200_line,
         "vwap": vwap_line,
-        "markers": markers,
+        "four_lines": four_lines,
+        "volume_profile": volume_profile,
+        "fibonacci_zones": fibonacci_zones,
+        "markers": all_markers,
     }
 

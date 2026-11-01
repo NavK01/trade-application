@@ -1,9 +1,11 @@
 import asyncio
 import contextlib
+import datetime
 import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import hmac
+import pandas as pd
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Response, Request, Depends, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -25,6 +27,19 @@ from app.trading.market_feed import market_feed
 from app.trading.strategy_manager import strategy_manager
 from app.trading.scanner import scanner
 from app.trading.candles import get_symbol_candles
+from app.trading.institutional_engine import (
+    calculate_indian_statutory_charges,
+    compute_premarket_4lines,
+    compute_volume_profile,
+    compute_fibonacci_zones,
+    compute_option_chain_gex,
+    detect_liquidity_sweeps_and_absorption,
+    get_index_heavyweights_matrix,
+    get_sector_rotation_heatmap,
+    generate_ai_price_attribution,
+    evaluate_risk_guardrails,
+    generate_institutional_ai_signal,
+)
 from app.trading.skills.day_trader_adapter import day_trader
 from app.trading.sentiment_analyzer import sentiment_engine
 from app.system.metrics import get_system_metrics
@@ -129,6 +144,21 @@ class ChatRequest(BaseModel):
 class SaveFileRequest(BaseModel):
     path: str
     content: str
+
+
+class InstitutionalFeeRequest(BaseModel):
+    buy_value: float
+    sell_value: float
+    instrument_type: Optional[str] = "INTRADAY_EQUITY"
+    exchange: Optional[str] = "NSE"
+    quantity: Optional[float] = 1.0
+
+
+class InstitutionalSignalRequest(BaseModel):
+    symbol: Optional[str] = "NIFTY"
+    daily_net_profit_pct: Optional[float] = 0.0
+    consecutive_losses: Optional[int] = 0
+    current_drawdown_pct: Optional[float] = 0.0
 
 @app.get("/")
 async def root():
@@ -525,6 +555,134 @@ async def get_risk_state(
     """Daily loss lock, profit target lock, trade count, and AI cost."""
     account = execution_engine.get_account(account_id)
     return strategy_manager.risk.get_state(account_id, account)
+
+
+# -------------------------------------------------------------
+# INSTITUTIONAL TRADING TERMINAL & SMART MONEY ENGINE
+# -------------------------------------------------------------
+@app.get("/api/trading/institutional/overview")
+async def get_institutional_overview_endpoint(
+    symbol: str = Query("NIFTY"),
+):
+    """
+    Returns unified institutional market intelligence for NIFTY, BANK NIFTY, and SENSEX:
+    - Pre-Market 4-Lines (PDH, PDL, PDC, 1H Swings)
+    - Volume Profile (POC, VAH, VAL) & Fibonacci Zones
+    - Option Chain GEX & Regime (Positive vs Negative Gamma)
+    - Heavyweight point contributions & Sector Heatmap
+    - AI Price Attribution (3-bullet explanation)
+    - 0.5% Net Profit & Risk Guardrails Status
+    """
+    clean_sym = symbol.strip().upper()
+    candles_res = get_symbol_candles(symbol=clean_sym, interval="5m", period="5d")
+    spot = candles_res.get("latest_price", 0.0)
+    chg_pct = candles_res.get("change_percent", 0.0)
+
+    # GEX & Options Microstructure
+    gex_data = compute_option_chain_gex(clean_sym, spot_price=spot)
+
+    # Heavyweights & Sector Heatmap
+    heavyweights = get_index_heavyweights_matrix(clean_sym, spot_price=spot)
+    sectors = get_sector_rotation_heatmap()
+
+    # Pre-Market 4-Lines, Volume Profile, Fibonacci
+    four_lines = candles_res.get("four_lines", {})
+    volume_profile = candles_res.get("volume_profile", {})
+    fib_zones = candles_res.get("fibonacci_zones", {})
+
+    # Recent Sweep if any
+    recent_sweeps = [m for m in candles_res.get("markers", []) if "SWEEP" in m.get("text", "")]
+    latest_sweep_dict = None
+    if recent_sweeps:
+        latest_sweep_dict = {
+            "narrative": recent_sweeps[-1].get("text", ""),
+            "timestamp": recent_sweeps[-1].get("time", 0)
+        }
+
+    # AI 3-Bullet Price Attribution
+    attribution = generate_ai_price_attribution(
+        index_symbol=clean_sym,
+        spot=spot,
+        change_pct=chg_pct,
+        gex_data=gex_data,
+        recent_sweep=latest_sweep_dict,
+        heavyweights=heavyweights
+    )
+
+    # 0.5% Net Profit & Risk Guardrails
+    portfolio = execution_engine.get_portfolio_summary(DEFAULT_ACCOUNT_ID)
+    starting_eq = 10000.0
+    current_net_pnl = portfolio.get("total_pnl_inr", 0.0)
+    daily_net_profit_pct = round((current_net_pnl / starting_eq) * 100, 2)
+    current_drawdown_pct = max(0.0, round((-current_net_pnl / starting_eq) * 100, 2)) if current_net_pnl < 0 else 0.0
+
+    guardrails = evaluate_risk_guardrails(
+        daily_net_profit_pct=daily_net_profit_pct,
+        consecutive_losses=0,
+        current_drawdown_pct=current_drawdown_pct,
+        current_time=datetime.datetime.now().time(),
+        trade_risk_reward=2.0
+    )
+
+    return {
+        "symbol": clean_sym,
+        "spot_price": spot,
+        "change_percent": chg_pct,
+        "gex": gex_data,
+        "four_lines": four_lines,
+        "volume_profile": volume_profile,
+        "fibonacci_zones": fib_zones,
+        "heavyweights": heavyweights,
+        "sectors": sectors,
+        "attribution": attribution,
+        "guardrails": guardrails,
+        "daily_net_profit_pct": daily_net_profit_pct,
+        "daily_goal_pct": 0.50,
+        "daily_goal_reached": daily_net_profit_pct >= 0.50,
+    }
+
+
+@app.get("/api/trading/institutional/gex")
+async def get_institutional_gex_endpoint(
+    symbol: str = Query("NIFTY"),
+):
+    """Returns strike-by-strike GEX table, open interest, and gamma flip zone."""
+    candles_res = get_symbol_candles(symbol=symbol, interval="5m", period="1d")
+    spot = candles_res.get("latest_price", 23000.0)
+    return compute_option_chain_gex(symbol, spot_price=spot)
+
+
+@app.post("/api/trading/institutional/calculate-fees")
+async def calculate_fees_endpoint(req: InstitutionalFeeRequest):
+    """Calculates all Indian statutory charges, taxes, GST, and net breakeven points."""
+    return calculate_indian_statutory_charges(
+        buy_value=req.buy_value,
+        sell_value=req.sell_value,
+        instrument_type=req.instrument_type or "INTRADAY_EQUITY",
+        exchange=req.exchange or "NSE",
+        quantity=req.quantity or 1.0
+    )
+
+
+@app.post("/api/trading/institutional/ai-signal")
+async def generate_ai_signal_endpoint(req: InstitutionalSignalRequest):
+    """Generates 4-step institutional AI signal with 1:2 R:R and Indian statutory fee deductions."""
+    clean_sym = (req.symbol or "NIFTY").strip().upper()
+    candles_res = get_symbol_candles(symbol=clean_sym, interval="5m", period="5d")
+    spot = candles_res.get("latest_price", 0.0)
+    raw_candles = candles_res.get("candles", [])
+    df = pd.DataFrame(raw_candles)
+    if not df.empty and "open" in df.columns:
+        df = df.rename(columns={"open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"})
+
+    return generate_institutional_ai_signal(
+        symbol=clean_sym,
+        spot_price=spot,
+        df=df,
+        daily_net_profit_pct=req.daily_net_profit_pct or 0.0,
+        consecutive_losses=req.consecutive_losses or 0,
+        current_drawdown_pct=req.current_drawdown_pct or 0.0
+    )
 
 # -------------------------------------------------------------
 # INTERACTIVE CHATBOT (DEEPSEEK / CLAUDE OPUS)

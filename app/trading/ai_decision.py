@@ -111,6 +111,7 @@ class AIDecisionEngine:
         max_entry_deviation_pct: float = 0.005,
         est_position_inr: float = 3000.0,
         timeout_s: float = 30.0,
+        max_calls: int = 400,
     ) -> None:
         self.max_stop_pct = max_stop_pct
         self.min_stop_pct = min_stop_pct
@@ -119,6 +120,9 @@ class AIDecisionEngine:
         self.max_entry_deviation_pct = max_entry_deviation_pct
         self.est_position_inr = est_position_inr
         self.timeout_s = timeout_s
+        # Hard ceiling on model calls per run, so a research run cannot burn
+        # unbounded spend if the candidate surface is larger than expected.
+        self.max_calls = max_calls
         # Observability: how many proposals were made / accepted / rejected and why.
         self.stats: Dict[str, Any] = {
             "calls": 0,
@@ -223,6 +227,14 @@ class AIDecisionEngine:
                 "entry": 0.0, "stop": 0.0, "target": 0.0,
                 "confidence_pct": 0,
                 "reasoning": "DeepSeek not configured.",
+                "cost_inr": 0.0,
+            }
+        if self.stats["calls"] >= self.max_calls:
+            return {
+                "action": "PASS",
+                "entry": 0.0, "stop": 0.0, "target": 0.0,
+                "confidence_pct": 0,
+                "reasoning": "Call budget exhausted.",
                 "cost_inr": 0.0,
             }
 

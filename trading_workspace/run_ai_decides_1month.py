@@ -21,6 +21,11 @@ spend. The question the user asked is simple: does the AI increase P&L?
 import asyncio
 import json
 import logging
+import os
+import sys
+
+# Ensure project root is in sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.trading.backtester import backtest_engine
 from app.trading.ai_decision import ai_decision_engine, AIDecisionEngine
@@ -28,6 +33,12 @@ from app.trading.intraday_strategies import IntradayStrategySuite
 from app.storage.db import db
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+# Line-buffer stdout so progress is visible while the run is detached.
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except Exception:
+    pass
 
 UNIVERSE = [
     "^BSESN",       # Sensex
@@ -45,12 +56,19 @@ INTERVAL = "5m"
 CAPITAL = 10_000.0
 
 
-def make_ai_override(engine: AIDecisionEngine):
+def make_ai_override(engine: AIDecisionEngine, min_bars: int = 6):
     """Async override that lets the AI own the whole trade geometry.
 
     The backtester's strategy_override signature is (history, prev_day_ohlc,
     interval) and does NOT include the symbol, so the backtester tags each
     history record with its symbol; we read it back here.
+
+    The AI still decides the ENTIRE trade (whether to trade, entry, stop,
+    target). To keep the run affordable we only *ask* it on bars that are
+    plausible long candidates at all: enough bars have printed, and price is
+    at/above VWAP or above the opening-range high. Asking the model about a
+    bar that is below both is wasted spend — the prompt itself says such a
+    setup is a PASS — and it would multiply the call count ~10x.
     """
 
     async def _override(history, prev_day_ohlc, interval):
@@ -58,12 +76,19 @@ def make_ai_override(engine: AIDecisionEngine):
             return None
         symbol = history[-1].get("symbol") or "UNKNOWN"
         df = IntradayStrategySuite.prepare_dataframe(history)
-        if len(df) < 5:
+        if len(df) < min_bars:
             return None
         df = IntradayStrategySuite.compute_technical_indicators(df)
-        current_price = float(df.iloc[-1]["close"])
+        cur = df.iloc[-1]
+        price = float(cur["close"])
+        vwap = float(cur.get("vwap", 0.0) or 0.0)
+        or_high = float(df.iloc[:3]["high"].max())
+        # Cheap plausibility gate: only consult the AI when a long setup could
+        # exist. The AI still owns the geometry of every trade it is asked about.
+        if not (price >= vwap or price >= or_high):
+            return None
         decision = await engine.decide(symbol, df, CAPITAL)
-        return engine.validate(decision, current_price)
+        return engine.validate(decision, price)
 
     return _override
 

@@ -108,3 +108,29 @@ On Monday, 2026-11-02 (full NSE/BSE trading day from 09:15 to 15:30 IST), the ap
   - Verified `/api/trading/institutional/overview` returns 200 OK with live index data.
   - Verified `institutional_runner` started with `Auto-execute: True`.
 
+---
+
+### Incident #2 (Date: 2026-11-02 — "Claude Code with Gemini 4 didn't work in tool loop")
+
+#### Symptom:
+When running Claude Code with `gemini-4-argon` on Vertex AI through the local launcher (`/home/super/.local/bin/claude`), single prompts worked, but as soon as the agent executed any tool (e.g., `Bash`, `View`, `Edit`), the next request failed with:
+`HTTP 400 Bad Request: "Function call is missing a thought_signature in functionCall parts. This is required for tools to work correctly... Additional data, function call default_api:Bash, position 2."`
+
+#### Root-Cause Diagnosis (First Principles):
+1. **Gemini 4 / 3.x Thought Signatures:**
+   - Reasoning-capable Gemini models generate an encrypted, stateful token called `thought_signature` (`extra_content.google.thought_signature`) on any `functionCall` part.
+   - For multi-turn and sequential tool loops, Google Cloud Vertex AI strictly validates and requires that subsequent requests round-trip this exact `thought_signature` inside the assistant's previous `tool_calls` payload.
+2. **Missing Metadata in Proxy Translation:**
+   - In `/home/super/Documents/Projects/Deepseek-Harness/scripts/vertex_proxy.py`:
+     - When Vertex AI returned streaming or non-streaming tool calls, `thought_signature` was discarded and not stored.
+     - When Claude Code submitted turn 2 (`tool_result`), `handle_anthropic_messages` converted the assistant `tool_use` blocks into standard OpenAI `tool_calls` without `extra_content.google.thought_signature`.
+     - Vertex AI rejected the payload with HTTP 400 `INVALID_ARGUMENT`, causing Claude Code to loop and crash.
+
+#### Corrective Action Plan & Implementation:
+- **Thread-Safe Signature Store:** Added persistent LRU `thought_signature` store in `vertex_proxy.py` backed by disk cache (`.thought_signatures.json`) and seeded with a valid Gemini 4 fallback signature.
+- **Bi-Directional Adapter:**
+  - **Inbound Capture:** Captured `thought_signature` from both SSE chunks and non-streaming responses from Vertex AI, indexing by tool call ID and tool signature.
+  - **Outbound Injection:** Re-injected `extra_content: {"google": {"thought_signature": sig}}` into assistant `tool_calls` for both Anthropic Messages and OpenAI Chat Completions endpoints whenever targeting Gemini models.
+- **Autonomous Loop Verification:** Verified Claude Code autonomously inspecting code, running bash tests, diagnosing assertions, updating code, and re-running tests until 100% passed.
+
+

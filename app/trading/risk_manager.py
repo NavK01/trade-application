@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional
 from app.config import settings
 from app.storage.db import DatabaseManager, db as default_db
 from app.trading import market_hours
+from app.trading.institutional_engine import INDEX_CONFIG
 
 logger = logging.getLogger("app.trading.risk_manager")
 
@@ -166,7 +167,16 @@ class RiskManager:
             )
 
         max_position_value = float(getattr(account, "initial_capital", settings.INITIAL_CAPITAL_INR)) * settings.MAX_POSITION_PCT
-        notional = round(float(price) * int(quantity), 2)
+        
+        # Calculate notional/margin: for Indian index derivatives, use option premium turnover
+        sym_clean = symbol.upper()
+        if sym_clean in INDEX_CONFIG:
+            idx_cfg = INDEX_CONFIG[sym_clean]
+            prem = float(price) * idx_cfg.get("atm_premium_pct", 0.0055)
+            notional = round(prem * idx_cfg.get("lot_size", 25) * int(quantity), 2)
+        else:
+            notional = round(float(price) * int(quantity), 2)
+
         if notional > max_position_value + 0.01:
             reasons.append(
                 f"Position size ₹{notional:,.2f} exceeds the "

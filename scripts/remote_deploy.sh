@@ -25,6 +25,10 @@ chmod 400 "$SSH_KEY"
 echo "[1/5] Removing obsolete tools (agy, opencode, deepseek-code) from server..."
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$VM_USER@$VM_HOST" bash -s << 'EOF'
 set -e
+echo "Stopping gemini-agent service before sync..."
+sudo systemctl stop gemini-agent 2>/dev/null || true
+sudo pkill -9 -f uvicorn 2>/dev/null || true
+
 echo "Killing legacy opencode and deepseek bridge processes..."
 sudo pkill -9 -f opencode 2>/dev/null || true
 sudo pkill -9 -f "bridge.server" 2>/dev/null || true
@@ -53,7 +57,6 @@ EOF
 # 2. Sync codebase
 echo "[2/5] Syncing updated institutional trading terminal to $REMOTE_DIR..."
 rsync -avz -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=no" \
-    --delete \
     --exclude='venv/' \
     --exclude='.git/' \
     --exclude='__pycache__/' \
@@ -61,6 +64,7 @@ rsync -avz -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=no" \
     --exclude='CrimsonAgent_key.pem' \
     --exclude='.pytest_cache/' \
     --exclude='*.log' \
+    --exclude='*.db' \
     --exclude='*.db-shm' \
     --exclude='*.db-wal' \
     "$DIR/" "$VM_USER@$VM_HOST:$REMOTE_DIR/"
@@ -143,3 +147,4 @@ echo " Application is running automatically in the background."
 echo " Domain: http://$VM_HOST"
 echo " Direct Port: http://$VM_HOST:7000"
 echo "=========================================================="
+

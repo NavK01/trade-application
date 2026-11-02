@@ -42,6 +42,7 @@ from app.trading.institutional_engine import (
 )
 from app.trading.skills.day_trader_adapter import day_trader
 from app.trading.sentiment_analyzer import sentiment_engine
+from app.trading.institutional_runner import institutional_runner
 from app.system.metrics import get_system_metrics
 from app.system.tokens import token_tracker
 from app.system.logging_manager import (
@@ -73,20 +74,21 @@ logger = logging.getLogger("app.main")
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start background 5-minute Argon AI predictor, autonomous strategy manager, and market feed."""
+    """Start DeepSeek Institutional Runner, autonomous strategy manager, and live market feed."""
     db.prune_historical_records()
     state = db.get_account_state()
     auto_exec = bool(state.get("auto_execute", settings.AUTO_EXECUTE_DEFAULT))
     strategy_manager.auto_execute = auto_exec
     argon_predictor.auto_execute = auto_exec
+    institutional_runner.auto_execute = auto_exec
 
     market_feed.start_feed()
-    argon_predictor.start_background_loop()
+    institutional_runner.start_background_loop()
     strategy_manager.start_background_loop()
-    logger.info(f"Started Market Feed, Argon 5-Minute AI Predictor, and Strategy Manager. Auto-execute initialized to: {auto_exec}")
+    logger.info(f"⚡ Started Market Feed, DeepSeek Institutional Runner (NIFTY/BANKNIFTY/SENSEX), and Strategy Manager. Auto-execute: {auto_exec}")
     yield
     market_feed.stop_feed()
-    argon_predictor.stop_background_loop()
+    institutional_runner.stop_background_loop()
     strategy_manager.stop_background_loop()
     logger.info("Stopped background services.")
 
@@ -168,6 +170,7 @@ async def root():
         return FileResponse(index_file)
     return {"message": "Opus/DeepSeek quant backend is running."}
 
+@app.get("/api/health")
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Nginx, VM monitoring, and system diagnostics."""
@@ -451,9 +454,11 @@ async def toggle_auto_execution(
     account_id: Optional[str] = Query(None),
     auth_user: Dict[str, Any] = Depends(require_auth),
 ):
-    """Enable or disable automatic execution for one or both paper accounts."""
+    """Enable or disable automatic execution for institutional trading."""
     strategy_manager.set_auto_execute(enabled, account_id=account_id)
     argon_predictor.auto_execute = enabled
+    institutional_runner.auto_execute = enabled
+    db.save_account_state(account_id or DEFAULT_ACCOUNT_ID, auto_execute=enabled)
     return {
         "auto_execute": enabled,
         "account_id": account_id or "all_accounts",
@@ -864,19 +869,23 @@ async def ws_market_stream(websocket: WebSocket):
 
 @app.websocket("/ws/predictor")
 async def ws_predictor_stream(websocket: WebSocket):
-    """Stream Argon 5-minute AI prediction alerts and schedule updates."""
+    """Stream DeepSeek Institutional AI prediction alerts and schedule updates."""
     if not await verify_websocket_auth(websocket):
         return
 
     await websocket.accept()
-    q = argon_predictor.subscribe()
+    q = institutional_runner.subscribe()
     try:
-        if argon_predictor.last_prediction:
-            await websocket.send_json({
-                "type": "new_prediction",
-                "prediction": argon_predictor.last_prediction,
-                "next_run_timestamp": argon_predictor.next_run_timestamp,
-            })
+        # Send initial snapshot of latest institutional signals
+        await websocket.send_json({
+            "type": "institutional_update",
+            "cycle": institutional_runner.cycle_count,
+            "timestamp": institutional_runner.last_run_timestamp or datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "auto_execute": institutional_runner.auto_execute,
+            "market_open": market_hours.is_market_open(),
+            "signals": institutional_runner.latest_signals,
+            "portfolio": execution_engine.get_portfolio_summary(),
+        })
         while True:
             data = await q.get()
             await websocket.send_json(data)
@@ -885,7 +894,7 @@ async def ws_predictor_stream(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Error in ws_predictor_stream: {e}")
     finally:
-        argon_predictor.unsubscribe(q)
+        institutional_runner.unsubscribe(q)
 
 # -------------------------------------------------------------
 # WORKSPACE CODE & FILE MANAGEMENT ENDPOINTS

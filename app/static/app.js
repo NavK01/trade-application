@@ -750,10 +750,19 @@ document.addEventListener('DOMContentLoaded', () => {
     marketStatusText.textContent = s.status_text || (s.is_open ? 'Market Open (NSE/BSE)' : 'Market Closed');
   }
 
-  // Periodic Refresh Loop (every 10 seconds for real-time P&L and DeepSeek predictions)
+  // Periodic Refresh Loop (every 10s for real-time P&L and DeepSeek signal, every 30s for candles)
   setInterval(() => {
     loadPortfolioAndPnL();
+    if (activeChartSymbol) {
+      loadInstitutionalSignal(activeChartSymbol);
+    }
   }, 10000);
+
+  setInterval(() => {
+    if (activeChartSymbol) {
+      loadCandles(activeChartSymbol, activeTimeframe, activePeriod);
+    }
+  }, 30000);
 
   // Initialize Terminal
   async function initAll() {

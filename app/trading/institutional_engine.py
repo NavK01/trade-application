@@ -39,6 +39,18 @@ INDIAN_STATUTORY_RATES = {
     "DEFAULT_SLIPPAGE_PCT": 0.0002,         # 0.02% execution slippage buffer
 }
 
+# -----------------------------------------------------------------------------
+# Indian Index Derivative & Option Lot Sizing Configuration
+# -----------------------------------------------------------------------------
+INDEX_CONFIG: Dict[str, Dict[str, Any]] = {
+    "NIFTY": {"lot_size": 25, "atm_premium_pct": 0.0055, "delta": 0.50, "exchange": "NSE"},
+    "^NSEI": {"lot_size": 25, "atm_premium_pct": 0.0055, "delta": 0.50, "exchange": "NSE"},
+    "BANKNIFTY": {"lot_size": 15, "atm_premium_pct": 0.0050, "delta": 0.50, "exchange": "NSE"},
+    "^NSEBANK": {"lot_size": 15, "atm_premium_pct": 0.0050, "delta": 0.50, "exchange": "NSE"},
+    "SENSEX": {"lot_size": 10, "atm_premium_pct": 0.0045, "delta": 0.50, "exchange": "BSE"},
+    "^BSESN": {"lot_size": 10, "atm_premium_pct": 0.0045, "delta": 0.50, "exchange": "BSE"},
+}
+
 # Top Heavyweight Weightages (% in Index)
 INDEX_HEAVYWEIGHTS_CONFIG = {
     "NIFTY": [

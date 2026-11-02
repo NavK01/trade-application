@@ -133,4 +133,36 @@ When running Claude Code with `gemini-4-argon` on Vertex AI through the local la
   - **Outbound Injection:** Re-injected `extra_content: {"google": {"thought_signature": sig}}` into assistant `tool_calls` for both Anthropic Messages and OpenAI Chat Completions endpoints whenever targeting Gemini models.
 - **Autonomous Loop Verification:** Verified Claude Code autonomously inspecting code, running bash tests, diagnosing assertions, updating code, and re-running tests until 100% passed.
 
+---
+
+### Incident #3 (Date: 2026-11-02 — "Unable to connect to API (Malformed_HTTP_Response) in Claude Code")
+
+#### Symptom:
+While executing complex workflows in Claude Code (e.g. reading `app/trading/backtester.py`), the CLI encountered:
+`* Unable to connect to API (Malformed_HTTP_Response) · Retrying in 27s · attempt 8/10`
+
+#### Root-Cause Diagnosis (First Principles):
+1. **HTML Error Response from Proxy:**
+   - On transient network/DNS drops (`[Errno -3] Temporary failure in name resolution`) or expired OAuth credentials (`ACCESS_TOKEN_TYPE_UNSUPPORTED`), `vertex_proxy.py` caught exceptions and invoked Python's standard `self.send_error(code, message)`.
+   - `BaseHTTPRequestHandler.send_error()` emits standard HTML (`Content-Type: text/html`), not JSON.
+2. **Streaming Protocol Corruption:**
+   - For streaming requests (`is_stream=True`), HTTP 200 SSE headers (`text/event-stream`) had already been flushed to the socket.
+   - Calling `send_error(500)` wrote an `HTTP/1.0 500 Internal Server Error` header block directly into the open chunked response body.
+   - The Anthropic client (`@anthropic-ai/sdk`) using Node's `llhttp` parser threw `HPE_INVALID_CONSTANT`, which Claude Code surfaces to the user as `Malformed_HTTP_Response`.
+3. **Dirty OAuth Token & Missing Invalidation:**
+   - `gcloud auth print-access-token` stdout occasionally appended component update notices.
+   - Cached tokens were kept for up to 50 minutes without invalidation on HTTP 401, causing repetitive 401 retry loops.
+
+#### Corrective Action Plan & Implementation:
+- **Clean Token Extraction:** Updated `get_gcloud_access_token()` to parse only the clean OAuth token matching `ya29.*` and discard any CLI warnings or trailing output.
+- **Token Invalidation Hook:** Implemented `invalidate_gcloud_token()` to purge cached token immediately upon any upstream HTTP 401 response.
+- **Anthropic Protocol Error Handler (`send_anthropic_error`):**
+  - Replaced all calls to `self.send_error()`.
+  - Non-streaming errors emit valid Anthropic JSON: `{"type": "error", "error": {"type": ..., "message": ...}}` with `Content-Type: application/json`.
+  - In-flight streaming errors emit structured SSE error frames: `event: error\ndata: ...\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n` and cleanly close the socket without corrupting HTTP headers.
+- **Upstream Auto-Retry with Exponential Backoff:** Added 3-stage automatic retry in `vertex_proxy.py` for transient network glitches and upstream 401/429/500/502/503/504 errors before returning failure.
+- **Service Reload & End-to-End Verification:**
+  - Restarted `vertex-proxy.service`.
+  - Verified Claude Code inspecting `app/trading/backtester.py` across multiple tool turns with zero errors and immediate 200 OK responses.
+
 

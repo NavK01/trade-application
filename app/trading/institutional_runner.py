@@ -28,15 +28,30 @@ from app.trading.institutional_engine import (
 
 logger = logging.getLogger("institutional_runner")
 
+# Indian Stocks with share prices ~₹150 to ~₹1,250 that can be bought directly within ₹10,000 capital
+DEFAULT_STOCKS: List[str] = [
+    "SBIN",        # State Bank of India (~₹800)
+    "ITC",         # ITC Ltd (~₹480)
+    "TATASTEEL",   # Tata Steel (~₹150)
+    "TATAMOTORS",  # Tata Motors (~₹850)
+    "ICICIBANK",   # ICICI Bank (~₹1,250)
+    "AXISBANK",    # Axis Bank (~₹1,150)
+    "NTPC",        # NTPC Ltd (~₹380)
+    "COALINDIA",   # Coal India (~₹430)
+]
+DEFAULT_INDICES: List[str] = ["NIFTY", "BANKNIFTY", "SENSEX"]
+DEFAULT_SYMBOLS: List[str] = DEFAULT_STOCKS + DEFAULT_INDICES
+
 
 class InstitutionalRunner:
-    """Autonomous trading engine for NIFTY 50, BANK NIFTY, and SENSEX."""
+    """Autonomous trading engine for Indian Stocks (~₹150-₹1,250) and Indices."""
 
-    def __init__(self):
+    def __init__(self, symbols: Optional[List[str]] = None):
         self.is_running = False
         self._loop_task: Optional[asyncio.Task] = None
-        self.interval_seconds = 60  # Evaluates indices every 60 seconds
-        self.indices: List[str] = ["NIFTY", "BANKNIFTY", "SENSEX"]
+        self.interval_seconds = 60  # Evaluates portfolio symbols every 60 seconds
+        self.symbols: List[str] = list(symbols or DEFAULT_SYMBOLS)
+        self.indices: List[str] = self.symbols  # backwards compatibility alias
         
         # State loaded from DB or settings
         state = db.get_account_state(DEFAULT_ACCOUNT_ID)
@@ -68,7 +83,8 @@ class InstitutionalRunner:
         if not self.is_running:
             self.is_running = True
             self._loop_task = asyncio.create_task(self._runner_loop())
-            logger.info("⚡ Started Institutional Autonomous Runner (NIFTY, BANKNIFTY, SENSEX). Auto-execute: %s", self.auto_execute)
+            logger.info("⚡ Started Institutional Autonomous Runner (Symbols: %s). Auto-execute: %s",
+                        ", ".join(self.symbols), self.auto_execute)
 
     def stop_background_loop(self):
         self.is_running = False
@@ -87,9 +103,9 @@ class InstitutionalRunner:
 
     async def evaluate_and_execute_cycle(self) -> Dict[str, Any]:
         """
-        Executes one full cycle across NIFTY, BANKNIFTY, and SENSEX:
+        Executes one full cycle across tradable stocks and indices:
         1. Manages existing open positions (SL/TP check, 15:20 IST square-off)
-        2. Evaluates institutional setups for each index
+        2. Evaluates institutional setups for each stock and index
         3. Fires auto-entry if conditions and risk gates allow
         """
         self.cycle_count += 1
@@ -105,10 +121,15 @@ class InstitutionalRunner:
         # ---------------------------------------------------------
         # STEP 1: Monitor Active Positions & Auto Square-Off
         # ---------------------------------------------------------
-        if market_hours.is_market_open():
+        enforce_hours = getattr(settings, "ENFORCE_MARKET_HOURS", True)
+        market_open = (not enforce_hours) or market_hours.is_market_open()
+        entry_window = (not enforce_hours) or market_hours.is_entry_window()
+        near_close = enforce_hours and market_hours.is_near_market_close()
+
+        if market_open:
             # Check 15:20 IST End of Day square-off
-            if market_hours.is_near_market_close() and acc.positions:
-                logger.info("15:20 IST window reached; flattening all index positions.")
+            if near_close and acc.positions:
+                logger.info("15:20 IST window reached; flattening all positions.")
                 for sym in list(acc.positions.keys()):
                     await execution_engine.close_position(sym, account_id=account_id, reason="eod_square_off")
 
@@ -140,7 +161,7 @@ class InstitutionalRunner:
                         await execution_engine.close_position(sym, account_id=account_id, reason=exit_reason)
 
         # ---------------------------------------------------------
-        # STEP 2: Evaluate Institutional Signals for All 3 Indices
+        # STEP 2: Evaluate Institutional Signals for All Tradable Symbols
         # ---------------------------------------------------------
         summary_results = {}
         daily_risk = db.get_daily_risk_state(account_id)
@@ -159,10 +180,12 @@ class InstitutionalRunner:
                 else:
                     break
 
-        for sym in self.indices:
+        for sym in self.symbols:
             try:
                 candles_data = get_symbol_candles(symbol=sym, interval="5m", period="5d")
                 spot = candles_data.get("latest_price", 0.0)
+                if spot <= 0:
+                    spot = cache.get_price(sym) or 0.0
                 candles = candles_data.get("candles", [])
                 
                 df = pd.DataFrame(candles)
@@ -186,30 +209,41 @@ class InstitutionalRunner:
                 # ---------------------------------------------------------
                 # STEP 3: Auto-Execute Entry If Conditions Allow
                 # ---------------------------------------------------------
-                if self.auto_execute and market_hours.is_entry_window():
-                    can_trade = sig.get("guardrails", {}).get("can_trade", False)
+                if self.auto_execute and entry_window:
+                    can_trade = (
+                        sig.get("guardrail_status", {}).get("can_trade", False)
+                        or sig.get("guardrails", {}).get("can_trade", False)
+                    )
                     action = sig.get("action")
-                    confidence = sig.get("confidence", 0)
+                    confidence = sig.get("confidence_score") or sig.get("confidence") or 0
 
-                    # Only execute high-confidence A+ setups when no existing position is open in this index
+                    # Only execute high-confidence A+ setups when no existing position is open in this symbol
                     if can_trade and action in ("BUY", "SELL") and confidence >= 70:
-                        if sym not in acc.positions:
-                            qty = 1  # 1 lot
-                            logger.info("⚡ Executing Auto-Entry for %s: %s @ ₹%.2f (SL: %.2f, TP: %.2f)",
-                                        sym, action, spot, sig["stop_loss"], sig["target_price"])
+                        if sym not in acc.positions and len(acc.positions) < settings.MAX_OPEN_POSITIONS:
+                            is_index = sym in INDEX_CONFIG
+                            if is_index:
+                                qty = 1  # 1 lot
+                            else:
+                                # Budget quantity: max 30% of ₹10,000 per stock position (~₹2,500 - ₹3,000)
+                                qty = acc.calculate_budget_quantity(sym, spot, max_alloc_pct=0.30)
+                                if qty <= 0:
+                                    qty = sig.get("quantity", 1)
+
+                            logger.info("⚡ Executing Auto-Entry for %s: %s %d qty @ ₹%.2f (SL: %.2f, TP: %.2f)",
+                                        sym, action, qty, spot, sig["stop_loss"], sig["target_price"])
                             await execution_engine.fast_execute_order(
                                 symbol=sym,
                                 action=action,
                                 quantity=qty,
                                 order_type="MARKET",
-                                strategy_name=sig.get("setup", "institutional_sweep_reversal"),
+                                strategy_name=sig.get("setup_name") or sig.get("setup", "institutional_sweep_reversal"),
                                 account_id=account_id,
                                 stop_loss=sig.get("stop_loss"),
                                 target_price=sig.get("target_price"),
                             )
 
             except Exception as exc:
-                logger.warning("Error evaluating index %s: %s", sym, exc)
+                logger.warning("Error evaluating symbol %s: %s", sym, exc)
 
         # Broadcast real-time snapshot
         payload = {

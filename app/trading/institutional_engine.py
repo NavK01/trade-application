@@ -389,12 +389,27 @@ def compute_option_chain_gex(symbol: str, spot_price: float) -> Dict[str, Any]:
     elif clean_sym in ["BANKNIFTY", "BANK NIFTY", "^NSEBANK"]:
         strike_step = 100.0
         base_iv = 0.16
-    else:  # SENSEX or BSE
+    elif clean_sym in ["SENSEX", "BSE:SENSEX", "^BSESN"]:
         strike_step = 100.0
         base_iv = 0.12
+    else:  # Individual stocks (scaled by stock spot price level)
+        base_iv = 0.22
+        if spot_price < 250:
+            strike_step = 2.5
+        elif spot_price < 500:
+            strike_step = 5.0
+        elif spot_price < 1000:
+            strike_step = 10.0
+        elif spot_price < 2500:
+            strike_step = 20.0
+        else:
+            strike_step = 50.0
 
-    atm_strike = round(spot_price / strike_step) * strike_step
-    strikes = [atm_strike + i * strike_step for i in range(-10, 11)]
+    atm_strike = round(spot_price / strike_step) * strike_step if spot_price > 0 else strike_step
+    raw_strikes = [atm_strike + i * strike_step for i in range(-10, 11)]
+    strikes = [round(s, 2) for s in raw_strikes if s > 0]
+    if not strikes:
+        strikes = [max(1.0, round(spot_price, 2))]
 
     chain_rows = []
     total_call_oi = 0
@@ -407,7 +422,9 @@ def compute_option_chain_gex(symbol: str, spot_price: float) -> Dict[str, Any]:
     # Realistic Open Interest skew around spot (typical Indian weekly options distribution)
     # Puts peak slightly below ATM; Calls peak slightly above ATM
     for strike in strikes:
-        dist_pct = (strike - spot_price) / spot_price
+        if strike <= 0 or spot_price <= 0:
+            continue
+        dist_pct = (strike - spot_price) / max(spot_price, 1e-4)
         
         # Call OI higher above spot (Call writers defending resistance)
         call_weight = math.exp(-0.5 * ((dist_pct - 0.012) / 0.015) ** 2)
@@ -894,8 +911,17 @@ def generate_institutional_ai_signal(
     reward_pts = abs(tp - entry) if action != "PASS" else 0.0
     rr_ratio = round(reward_pts / max(risk_pts, 0.01), 2) if action != "PASS" else 0.0
 
-    # Assume standard index proxy lot: e.g. 25 qty for Nifty, 15 for Bank Nifty
-    qty = 25 if "NIFTY" in clean_sym and "BANK" not in clean_sym else (15 if "BANK" in clean_sym else 10)
+    # Position sizing: 1 lot for indices; budget allocation (~₹2,500) for stocks
+    if clean_sym in ("NIFTY", "NIFTY 50", "^NSEI"):
+        qty = 25
+    elif clean_sym in ("BANKNIFTY", "BANK NIFTY", "^NSEBANK"):
+        qty = 15
+    elif clean_sym in ("SENSEX", "BSE:SENSEX", "^BSESN"):
+        qty = 10
+    else:
+        # Stock sizing: ~₹2,500 per position fits comfortably inside ₹10,000 capital (allowing 3-4 concurrent positions)
+        qty = max(1, int(2500 // max(spot_price, 1.0)))
+
     buy_val = (entry if action == "BUY" else tp) * qty
     sell_val = (tp if action == "BUY" else entry) * qty
     fees = calculate_indian_statutory_charges(buy_val, sell_val, instrument_type="INTRADAY_EQUITY", quantity=qty)
@@ -919,6 +945,7 @@ def generate_institutional_ai_signal(
         "symbol": clean_sym,
         "action": action,
         "setup_name": setup_name,
+        "setup": setup_name,  # backward compatibility alias
         "spot_price": spot_price,
         "entry_price": entry,
         "stop_loss": sl,
@@ -931,7 +958,9 @@ def generate_institutional_ai_signal(
         "expected_net_pnl": fees.get("net_pnl", 0.0) if action != "PASS" else 0.0,
         "breakeven_points": fees.get("breakeven_points", 0.0),
         "guardrail_status": guardrails,
+        "guardrails": guardrails,  # backward compatibility alias
         "confidence_score": confidence,
+        "confidence": confidence,  # backward compatibility alias
         "reasoning": reasoning_bullets,
         "model": "deepseek-ai/deepseek-v4.1-flash-maas",
     }

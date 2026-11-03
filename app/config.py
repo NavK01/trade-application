@@ -47,7 +47,8 @@ class Settings(BaseSettings):
     # Fast Caching & Storage
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     DATABASE_PATH: str = os.getenv("DATABASE_PATH", "./trading_workspace/trading_data.db")
-    AUTO_EXECUTE_DEFAULT: bool = os.getenv("AUTO_EXECUTE_DEFAULT", "false").lower() in ("true", "1", "yes")
+    AUTO_EXECUTE_DEFAULT: bool = os.getenv("AUTO_EXECUTE_DEFAULT", "true").lower() in ("true", "1", "yes")
+    ENFORCE_MARKET_HOURS: bool = os.getenv("ENFORCE_MARKET_HOURS", "true").lower() in ("true", "1", "yes")
 
     # Hard risk limits (paper account defaults)
     MAX_DAILY_LOSS_PCT: float = float(os.getenv("MAX_DAILY_LOSS_PCT", "1.0"))

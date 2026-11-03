@@ -165,4 +165,16 @@ While executing complex workflows in Claude Code (e.g. reading `app/trading/back
   - Restarted `vertex-proxy.service`.
   - Verified Claude Code inspecting `app/trading/backtester.py` across multiple tool turns with zero errors and immediate 200 OK responses.
 
+---
+
+### Configuration Reset: Vanilla Claude Code Restoration (Date: 2026-11-03)
+- **User Request:** Remove all custom wrappers, proxy bridges, and helper scripts so Claude Code runs in its standard, untouched native mode.
+- **Actions Completed:**
+  1. Stopped and disabled `vertex-proxy.service` (`systemctl --user stop/disable vertex-proxy.service`). Port 4000 closed.
+  2. Removed custom launcher scripts (`~/.local/bin/claude` wrapper and `~/.local/bin/claude-vertex`).
+  3. Linked `~/.local/bin/claude` directly to the official binary `/home/super/.nvm/versions/node/v24.22.2/bin/claude`.
+  4. Removed custom aliases (`claude`, `claude-vertex`) from `~/.bashrc`.
+  5. Cleaned placeholder keys from `~/.claude.json`.
+  6. Verified that `which claude` executes the standard upstream Claude Code binary.
+
 

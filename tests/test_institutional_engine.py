@@ -130,10 +130,10 @@ class TestInstitutionalEngine(unittest.TestCase):
         self.assertEqual(sweeps[-1]["swept_level"], "PDH")
 
     def test_risk_guardrails_circuit_breakers(self):
-        """Test Kill switches: +0.5% profit lock, 2 consecutive loss lockout, -0.5% drawdown."""
-        # Case 1: Target achieved >= +0.5%
+        """Test Kill switches: >= 1.0% profit lock, 4 consecutive loss lockout, max drawdown."""
+        # Case 1: Target achieved >= TARGET_NET_PROFIT_PCT (>= 1.0%)
         status1 = evaluate_risk_guardrails(
-            daily_net_profit_pct=0.55,
+            daily_net_profit_pct=1.05,
             consecutive_losses=0,
             current_drawdown_pct=0.0,
             current_time=time(10, 0),
@@ -142,11 +142,11 @@ class TestInstitutionalEngine(unittest.TestCase):
         self.assertFalse(status1["can_trade"])
         self.assertEqual(status1["trigger"], "PROFIT_GOAL_LOCKED")
         
-        # Case 2: 2 consecutive losses
+        # Case 2: 4 consecutive losses circuit breaker
         status2 = evaluate_risk_guardrails(
-            daily_net_profit_pct=-0.2,
-            consecutive_losses=2,
-            current_drawdown_pct=0.2,
+            daily_net_profit_pct=-0.5,
+            consecutive_losses=4,
+            current_drawdown_pct=0.5,
             current_time=time(10, 0),
             trade_risk_reward=2.0
         )

@@ -234,4 +234,33 @@ At the close of Wednesday 2026-11-04, the user reported "still I see nothing". O
 - **Frontend Usability Fix:** Set `SBIN` as the active default asset, added stock selector buttons, and updated the positions view to inform the user whenever orders executed today.
 - **Account Reset:** Reset the paper account balance back to ₹10,000 initial capital on the Azure server.
 
+---
+
+### Incident #6 (Date: 2026-11-04 — "Elimination of Rigid Risk Traps: .env override, 0.5% profit lockout, 0.5% drawdown freeze, and End-to-End Simulation Testing")
+
+#### Symptom:
+User observed recurring freezing behavior where the system repeatedly locked after minimal market activity, preventing the bot from achieving the >= 1.0% daily profit goal.
+
+#### Root-Cause Diagnosis (First Principles):
+1. **.env Value Override of Config Defaults:**
+   - Although `config.py` had default constants updated to `MAX_DAILY_LOSS_PCT = 3.0` and `MAX_TRADES_PER_DAY = 6`, the `.env` file explicitly defined `MAX_DAILY_LOSS_PCT=1.0` and `MAX_TRADES_PER_DAY=3`. Pydantic Settings reads `.env` first, overriding the code defaults at runtime.
+2. **Hardcoded Circuit Breakers in Institutional Engine:**
+   - `institutional_engine.py` had hardcoded `if daily_net_profit_pct >= 0.50:` locking profit target at +0.5% (+₹50), completely preventing the bot from seeking the user's desired >= 1.0% (+₹100) target.
+   - It also had hardcoded `if current_drawdown_pct >= 0.50:` halting all trading on a -0.5% (-₹50) dip, which trips on standard intraday stock noise and statutory transaction fees.
+   - It had `if consecutive_losses >= 2:` halting the entire day after 2 minor stopouts.
+3. **Daily Trade Quota Exhaustion:**
+   - `MAX_TRADES_PER_DAY=3` in `.env` meant that firing 3 opening orders (e.g. across 3 stocks) instantly exhausted the trade limit for the day, locking new entries for the remaining 6 hours of the session.
+
+#### Corrective Actions Implemented:
+- **Synchronized `.env` Limits:**
+  - `MAX_DAILY_LOSS_PCT=3.0` (₹300 daily risk cushion for ₹10k capital).
+  - `MAX_TRADES_PER_DAY=10` (permits active intraday trading across 8 stock candidates).
+  - `TARGET_NET_PROFIT_PCT=1.0` (targets user's goal of >= 1.0% net profit daily).
+- **Dynamic Guardrails in `institutional_engine.py`:**
+  - Refactored `evaluate_risk_guardrails` to dynamically load `settings.TARGET_NET_PROFIT_PCT` and `settings.MAX_DAILY_LOSS_PCT`.
+  - Increased consecutive loss circuit breaker to 4.
+- **End-to-End Test Suite:**
+  - Created `tests/test_trading_system_e2e.py` verifying the full lifecycle: sizing across universe, allowing 1% profit target, 3% drawdown cushion, and complete buy -> update -> target exit cycle.
+  - All 17 automated tests pass 100%.
+
 

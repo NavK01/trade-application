@@ -22,6 +22,8 @@ from typing import Dict, Any, List, Optional, Tuple
 import pandas as pd
 import numpy as np
 
+from app.config import settings
+
 # -----------------------------------------------------------------------------
 # Statutory Indian Brokerage, Exchange & Tax Constants (2025-2026 Schedule)
 # -----------------------------------------------------------------------------
@@ -725,37 +727,40 @@ def evaluate_risk_guardrails(
     trade_risk_reward: float
 ) -> Dict[str, Any]:
     """
-    Enforces hard mathematical circuit breakers:
-    - Target Achieved: Daily Net Profit >= +0.5% (Lock profits, prevent overtrading)
-    - Consecutive Losses: >= 2 (Stop trading immediately to kill tilt)
-    - Max Drawdown: >= 0.5% (Strict capital preservation stop)
+    Enforces hard mathematical circuit breakers calibrated for user's target:
+    - Target Achieved: Daily Net Profit >= TARGET_NET_PROFIT_PCT (default 1.0% = ₹100 net profit)
+    - Consecutive Losses: >= 4 (Halt trading after 4 consecutive losses to eliminate tilt)
+    - Max Drawdown: >= MAX_DAILY_LOSS_PCT (default 3.0% = ₹300 capital cushion)
     - Time Windows: 09:15-10:45 AM & 13:45-15:15 PM IST (High volume institutional windows)
     - Risk/Reward: Minimum 1:1.5 to 1:2 net after statutory fees
     """
-    # 1. Profit Target Lock (+0.5% to +1.0% Daily Goal)
-    if daily_net_profit_pct >= 0.50:
+    profit_target_pct = float(getattr(settings, "TARGET_NET_PROFIT_PCT", 1.0))
+    max_loss_pct = float(getattr(settings, "MAX_DAILY_LOSS_PCT", 3.0))
+
+    # 1. Profit Target Lock (>= TARGET_NET_PROFIT_PCT Daily Goal)
+    if daily_net_profit_pct >= profit_target_pct:
         return {
             "can_trade": False,
             "trigger": "PROFIT_GOAL_LOCKED",
-            "message": f"Daily target (+{daily_net_profit_pct:.2f}% >= +0.50%) ACHIEVED! Order execution locked to preserve capital and prevent giveback.",
+            "message": f"Daily target (+{daily_net_profit_pct:.2f}% >= +{profit_target_pct:.2f}%) ACHIEVED! Order execution locked to preserve capital and prevent giveback.",
             "window_status": "LOCKED_PROFIT"
         }
 
-    # 2. Consecutive Loss Lockout (Chris Kmer Robbins Cup Rule: max 2 consecutive losses)
-    if consecutive_losses >= 2:
+    # 2. Consecutive Loss Lockout (4 consecutive losses)
+    if consecutive_losses >= 4:
         return {
             "can_trade": False,
             "trigger": "CONSECUTIVE_LOSS_CIRCUIT_BREAKER",
-            "message": f"2 consecutive losses reached ({consecutive_losses}). Trading halted for the remainder of the session to eliminate emotional tilt.",
+            "message": f"4 consecutive losses reached ({consecutive_losses}). Trading halted for the remainder of the session to eliminate emotional tilt.",
             "window_status": "HALTED_LOSS_LIMIT"
         }
 
-    # 3. Maximum Drawdown Gate (-0.5% of Capital)
-    if current_drawdown_pct >= 0.50:
+    # 3. Maximum Drawdown Gate (MAX_DAILY_LOSS_PCT of Capital, default 3.0% = ₹300)
+    if current_drawdown_pct >= max_loss_pct:
         return {
             "can_trade": False,
             "trigger": "MAX_DRAWDOWN_LIMIT_REACHED",
-            "message": f"Daily drawdown limit hit (-{current_drawdown_pct:.2f}% >= -0.50%). Capital preservation protocol engaged.",
+            "message": f"Daily drawdown limit hit (-{current_drawdown_pct:.2f}% >= -{max_loss_pct:.2f}%). Capital preservation protocol engaged.",
             "window_status": "HALTED_DRAWDOWN"
         }
 

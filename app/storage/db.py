@@ -11,12 +11,13 @@ cost so the dashboard can show gross P&L, fees, AI cost, and net P&L after AI.
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Generator
 
 from app.config import ACCOUNT_IDS, ACCOUNT_NAMES, DEFAULT_ACCOUNT_ID, settings
 from app.trading import market_hours
@@ -36,11 +37,16 @@ class DatabaseManager:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
+    @contextlib.contextmanager
+    def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
         conn = sqlite3.connect(str(self.db_path), timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     # ------------------------------------------------------------------
     # Schema

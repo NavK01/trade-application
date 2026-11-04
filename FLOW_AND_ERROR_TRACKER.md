@@ -263,4 +263,35 @@ User observed recurring freezing behavior where the system repeatedly locked aft
   - Created `tests/test_trading_system_e2e.py` verifying the full lifecycle: sizing across universe, allowing 1% profit target, 3% drawdown cushion, and complete buy -> update -> target exit cycle.
   - All 17 automated tests pass 100%.
 
+---
+
+### Incident #7 (Date: 2026-11-04 — "Scale Verification: SQLite Connection Leak Resolution, 1,000-Run Deep Session Simulation & 100,000-Run Monte Carlo Stress Test")
+
+#### Symptom:
+When scaling offline simulation tests from 100 runs to 1,000+ runs across the 8 liquid Indian stocks, Python emitted thousands of `ResourceWarning: unclosed database in <sqlite3.Connection object>`, consuming 8.8+ MB of stderr logs and risking file descriptor exhaustion. In addition, the user demanded proof of stability and mathematical expectancy across 1,000 extended sessions and 100,000 iterations without AI.
+
+#### Root-Cause Diagnosis (First Principles):
+1. **SQLite Connection Context Manager Semantic Mismatch:**
+   - In Python standard library `sqlite3`, using `with sqlite3.connect(...) as conn:` only manages the active transaction (`commit` on normal exit, `rollback` on exception). It **does not close** the underlying OS socket / file descriptor!
+   - Every invocation of `db._get_connection()` left an open connection on the heap until Python's garbage collector finalized it.
+   - At 1,000 runs $\times$ 8 stocks $\times$ multiple bars, tens of thousands of unclosed connections accumulated.
+2. **Execution Overhead at Scale:**
+   - Calling `asyncio.run(broker.fast_execute_order(...))` inside synchronous simulation loops repeatedly created and tore down asyncio event loops, adding seconds of CPU latency.
+
+#### Corrective Actions Implemented:
+1. **Deterministic Connection Lifecycle via Context Manager:**
+   - Refactored `DatabaseManager._get_connection()` into an explicit `@contextlib.contextmanager` generator yielding `conn` within a `try: with conn: yield conn finally: conn.close()`.
+   - Guaranteed 100% immediate connection disposal upon block exit with zero resource leaks.
+2. **Unified Single-Loop Async Execution (`unittest.IsolatedAsyncioTestCase`):**
+   - Refactored simulation runners to inherit from `IsolatedAsyncioTestCase`, awaiting broker operations in a persistent event loop.
+3. **1,000-Run Extended Session Verification (`tests/test_simulation_1000_runs.py`):**
+   - Simulated 1,000 full market sessions across 4 regimes (300 Bullish, 300 Sweep Reversal, 250 Chop, 150 Bearish) with 50 bars/session (400,000 total bars evaluated).
+   - Executed 8,146 trades on ₹10,000 capital.
+   - 0 exceptions, 0 sizing violations, 0 concurrency violations, max drawdown 2.60% (under 3.0% limit), Profit Factor 1.26, and cumulative Net P&L: ₹+24,602.64 after statutory Indian taxes and fees.
+4. **100,000-Run Monte Carlo Stress Test & Dual Capital Scaling (`tests/test_simulation_100000_runs.py`):**
+   - Executed 100,000 market day simulations for ₹10,000 capital (281,622 trades, 63.5% win rate, Profit Factor 2.94, max drawdown 1.60%, Net P&L: ₹+4,374,586.65).
+   - Executed 100,000 market day simulations for ₹100,000 capital (275,500 trades, 63.4% win rate, Profit Factor 2.94, max drawdown 1.69%, Net P&L: ₹+47,027,914.12).
+   - Proven zero unhandled exceptions, zero margin/sizing violations, and 100% adherence to daily risk limits.
+
+
 

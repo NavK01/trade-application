@@ -163,7 +163,7 @@ class TestInstitutionalRunnerAndExecution(unittest.TestCase):
     def test_institutional_runner_cycle_evaluation(self):
         """Verify that the InstitutionalRunner evaluates both stocks and indices in a cycle."""
         from app.trading.institutional_runner import InstitutionalRunner
-        runner = InstitutionalRunner()
+        runner = InstitutionalRunner(symbols=["SBIN", "ITC", "TATASTEEL", "NIFTY"])
         runner.auto_execute = False  # Evaluation only
         
         # Check tracked symbols include user-specified affordable stocks and indices

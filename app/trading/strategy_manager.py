@@ -347,20 +347,10 @@ Do not promise returns. Markdown only."""
                             pos.update_price(live_p)
 
                             exit_reason = None
-                            if pos.hold_to_close:
-                                # Trend trade: exit only on the protective stop.
-                                # The end-of-day square-off handles the rest.
-                                if pos.stop_loss and pos.current_price <= pos.stop_loss:
-                                    exit_reason = "stop_loss"
-                            else:
-                                if pos.target_price and pos.current_price >= pos.target_price:
-                                    exit_reason = "target"
-                                elif pos.stop_loss and pos.current_price <= pos.stop_loss:
-                                    exit_reason = "stop_loss"
-                                elif pos.unrealized_pnl_pct >= 1.5:
-                                    exit_reason = "profit_trail"
-                                elif pos.unrealized_pnl_pct <= -1.2:
-                                    exit_reason = "hard_stop"
+                            if pos.target_price and pos.current_price >= pos.target_price:
+                                exit_reason = "target"
+                            elif pos.stop_loss and pos.current_price <= pos.stop_loss:
+                                exit_reason = "stop_loss"
                             if exit_reason:
                                 await execution_engine.close_position(
                                     sym, account_id=acc_id, reason=exit_reason

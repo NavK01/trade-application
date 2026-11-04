@@ -40,7 +40,8 @@ DEFAULT_STOCKS: List[str] = [
     "COALINDIA",   # Coal India (~₹430)
 ]
 DEFAULT_INDICES: List[str] = ["NIFTY", "BANKNIFTY", "SENSEX"]
-DEFAULT_SYMBOLS: List[str] = DEFAULT_STOCKS + DEFAULT_INDICES
+# Autonomous execution exclusively trades liquid stocks (~₹150 - ₹1,400) for ₹10,000 capital accounts
+DEFAULT_SYMBOLS: List[str] = list(DEFAULT_STOCKS)
 
 
 class InstitutionalRunner:

@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- State Variables ---
   let authToken = localStorage.getItem('quant_auth_token') || '';
-  let activeChartSymbol = 'NIFTY';
+  let activeChartSymbol = 'SBIN';
   let activeTimeframe = '5m';
   let activePeriod = '5d';
   let chart = null;
@@ -480,7 +480,12 @@ document.addEventListener('DOMContentLoaded', () => {
       // Render Positions Table
       if (positionsTbody) {
         if (!posList.length) {
-          positionsTbody.innerHTML = '<tr><td colspan="6" class="table-empty">No active open positions.</td></tr>';
+          const executedCount = data.total_orders_executed || 0;
+          if (executedCount > 0) {
+            positionsTbody.innerHTML = `<tr><td colspan="6" class="table-empty">No active open positions. <strong>(${executedCount} orders executed today)</strong> — click <span style="color:var(--accent-blue);cursor:pointer;text-decoration:underline;" onclick="document.getElementById('tab-btn-history').click()">📜 Trade Ledger</span> to view.</td></tr>`;
+          } else {
+            positionsTbody.innerHTML = '<tr><td colspan="6" class="table-empty">No active open positions. Awaiting DeepSeek setup...</td></tr>';
+          }
         } else {
           positionsTbody.innerHTML = posList.map(p => {
             const pnlCls = p.unrealized_pnl >= 0 ? 'val-green' : 'val-red';
@@ -638,6 +643,15 @@ document.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('.chip-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       const sym = btn.getAttribute('data-sym');
+      if (orderSymbolInput) orderSymbolInput.value = sym;
+      if (fastQty) {
+        if (sym === 'NIFTY') fastQty.value = 25;
+        else if (sym === 'BANKNIFTY') fastQty.value = 15;
+        else if (sym === 'SENSEX') fastQty.value = 10;
+        else if (['TATASTEEL', 'COALINDIA', 'NTPC'].includes(sym)) fastQty.value = 10;
+        else if (['ITC'].includes(sym)) fastQty.value = 5;
+        else fastQty.value = 2; // SBIN, ICICIBANK, AXISBANK, TATAMOTORS
+      }
       loadCandles(sym, activeTimeframe, activePeriod);
     });
   });

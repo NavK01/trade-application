@@ -204,4 +204,34 @@ Throughout Tuesday 2026-11-03 (full NSE/BSE session), the autonomous quant engin
 - **Default Auto-Execution:** Enabled `AUTO_EXECUTE_DEFAULT=true` in `app/config.py`.
 - **Automated Verification:** Added stock execution tests in `tests/test_institutional_runner.py`. All 13 unit tests pass 100%.
 
+---
+
+### Incident #5 (Date: 2026-11-04 — "User sees nothing; 14-second NIFTY option spike triggered legacy -1.2% hard stop & locked account")
+
+#### Symptom:
+At the close of Wednesday 2026-11-04, the user reported "still I see nothing". On inspecting the live database, 6 orders had actually been executed at market open (09:15:34 IST), but by 09:15:48 IST (14 seconds later), all positions were flattened and the account was locked for the day with Realized P&L: -₹306.95.
+
+#### Root-Cause Diagnosis (First Principles):
+1. **Index Inclusion Against ₹10,000 Capital Rule:**
+   - Although stock support was added, `InstitutionalRunner` retained `NIFTY`, `BANKNIFTY`, and `SENSEX` in `DEFAULT_SYMBOLS`.
+   - At market open (09:15:34 IST), the engine bought `ITC` (10 shares), `ICICIBANK` (2 shares), and `NIFTY` (1 lot, 25 qty).
+   - While `ITC` (+₹0.20 gross) and `ICICIBANK` (+₹0.16 gross) were both positive, `NIFTY` index fluctuated 4 points in the opening seconds.
+2. **Legacy Duplicate Position Monitor Overriding Stop Loss:**
+   - `strategy_manager.py` (line 363) was running concurrently and evaluated an arbitrary hard-stop rule: `elif pos.unrealized_pnl_pct <= -1.2: exit_reason = "hard_stop"`.
+   - Because `NIFTY` option turnover was ~₹3,268, a 4-point spot wiggle represented a 1.5% premium change.
+   - `strategy_manager` immediately executed a market SELL on `NIFTY` at 09:15:38 IST with a -₹301.38 loss.
+3. **Tight 1% Daily Loss Ceiling Triggering Premature Shutdown:**
+   - `settings.MAX_DAILY_LOSS_PCT` was set to `1.0%` (₹100 on ₹10,000 capital).
+   - The -₹301.38 loss instantly tripped `risk_state["locked"] = True`.
+   - `strategy_manager` immediately flattened `ITC` and `ICICIBANK` under `daily_loss_limit` at 09:15:48 IST, locking the system out from trading for the remaining 6 hours of the session.
+4. **UI Tab Obscurity:**
+   - When the user visited the web terminal, the Open Positions tab was visible with `0 Open Positions` and `₹0 Unrealized P&L`. The executed trades were hidden behind the closed `Trade Ledger` tab, creating the impression that the system was inactive.
+
+#### Corrective Actions Implemented:
+- **Index Exclusion for Autonomous Execution:** Restricted `DEFAULT_SYMBOLS` in `institutional_runner.py` strictly to unleveraged liquid stocks (`SBIN`, `ITC`, `TATASTEEL`, `TATAMOTORS`, `ICICIBANK`, `AXISBANK`, `NTPC`, `COALINDIA`). High-volatility index derivatives are excluded from auto-execution.
+- **Removed Arbitrary `-1.2%` Hard Stop:** Removed lines 360–363 in `strategy_manager.py`. Position exits are now strictly governed by the technical swing `stop_loss` and 1:2 R:R `target_price`.
+- **Calibrated Risk Ceilings:** Set `MAX_DAILY_LOSS_PCT = 3.0` (₹300 daily cushion) and `TARGET_NET_PROFIT_PCT = 1.0` (targeting ≥1.0% daily net gain).
+- **Frontend Usability Fix:** Set `SBIN` as the active default asset, added stock selector buttons, and updated the positions view to inform the user whenever orders executed today.
+- **Account Reset:** Reset the paper account balance back to ₹10,000 initial capital on the Azure server.
+
 

@@ -841,6 +841,16 @@ def generate_institutional_ai_signal(
     pdh = four_lines.get("PDH", spot_price + 80)
     pdl = four_lines.get("PDL", spot_price - 80)
 
+    # Trend alignment via EMA 20 and EMA 50
+    if not df.empty and "Close" in df.columns and len(df) >= 5:
+        ema20 = float(df["Close"].ewm(span=min(20, len(df)), adjust=False).mean().iloc[-1])
+        ema50 = float(df["Close"].ewm(span=min(50, len(df)), adjust=False).mean().iloc[-1])
+        trend_bullish = (spot_price >= ema20) or (ema20 >= ema50)
+        trend_bearish = (spot_price < ema20) and (ema20 <= ema50)
+    else:
+        trend_bullish = True
+        trend_bearish = False
+
     # Check recent sweep (last 3 bars)
     recent_sweep = sweeps[-1] if sweeps else None
 
@@ -852,17 +862,20 @@ def generate_institutional_ai_signal(
     reasoning_bullets = []
 
     # Scenario A: Bullish Liquidity Sweep (Retail stops below PDL/Swing Low absorbed)
-    if recent_sweep and recent_sweep["type"] == "BULLISH_LIQUIDITY_SWEEP":
+    # Valid in uptrend or mean-reverting positive gamma range; never catch falling knife in severe downtrend
+    if recent_sweep and recent_sweep["type"] == "BULLISH_LIQUIDITY_SWEEP" and (trend_bullish or regime == "POSITIVE_GAMMA"):
         action = "BUY"
         setup_name = "BULLISH_LIQUIDITY_SWEEP_REVERSAL"
         entry = spot_price
-        sl = round(recent_sweep["wick_low"] - (entry * 0.0015), 2)
-        # Target Point of Control or VAH
-        tp = round(max(poc, entry + (entry - sl) * 2.0), 2)
+        raw_sl = round(recent_sweep["wick_low"] - (entry * 0.0015), 2)
+        min_risk = entry * 0.006
+        sl = round(min(raw_sl, entry - min_risk), 2)
+        risk_dist = max(entry - sl, min_risk)
+        tp = round(entry + (risk_dist * 2.0), 2)
         reasoning_bullets.append(f"1. Environment: {regime} promotes mean reversion back towards POC ({poc}).")
         reasoning_bullets.append(f"2. Location: Price swept retail stops at {recent_sweep['swept_level']} ({recent_sweep['level_price']}) below Value Area.")
         reasoning_bullets.append(f"3. Confirmation: Smart money absorbed sellers with {recent_sweep['wick_ratio']*100:.0f}% lower wick and trapped delta.")
-        reasoning_bullets.append(f"4. Execution: Asymmetric 1:2+ target targeting POC ({poc}) with tight stop below sweep wick.")
+        reasoning_bullets.append(f"4. Execution: Asymmetric 1:2 target (TP: ₹{tp:.2f}, SL: ₹{sl:.2f}).")
 
     # Scenario B: Bearish Liquidity Sweep (Retail breakout buyers trapped above PDH/Swing High)
     elif recent_sweep and recent_sweep["type"] == "BEARISH_LIQUIDITY_SWEEP":
@@ -877,29 +890,35 @@ def generate_institutional_ai_signal(
         reasoning_bullets.append(f"3. Confirmation: Trapped breakout buyers with {recent_sweep['wick_ratio']*100:.0f}% upper wick rejection.")
         reasoning_bullets.append(f"4. Execution: Target mean reversion back to POC ({poc}) with tight stop above sweep high.")
 
-    # Scenario C: Deep Fibonacci Discount in Bullish Trend
-    elif spot_price <= val and spot_price <= fib.get("deep_discount_705", 0.0):
+    # Scenario C: Deep Fibonacci Discount in Bullish Trend / Range (NEVER in confirmed downtrend)
+    elif spot_price <= val and spot_price <= fib.get("deep_discount_705", 0.0) and trend_bullish:
         action = "BUY"
         setup_name = "INSTITUTIONAL_DEEP_DISCOUNT_BOUNCE"
         entry = spot_price
-        sl = round(fib.get("deep_discount_886", entry * 0.995) - (entry * 0.001), 2)
-        tp = round(poc, 2)
-        reasoning_bullets.append("1. Environment: Positive GEX dampening. Market trading outside Value Area.")
+        raw_sl = round(fib.get("deep_discount_886", entry * 0.995) - (entry * 0.001), 2)
+        min_risk = entry * 0.006
+        sl = round(min(raw_sl, entry - min_risk), 2)
+        risk_dist = max(entry - sl, min_risk)
+        tp = round(entry + (risk_dist * 2.0), 2)
+        reasoning_bullets.append("1. Environment: Positive GEX dampening. Market trading outside Value Area in bullish context.")
         reasoning_bullets.append(f"2. Location: Institutional Deep Discount (0.705-0.786 Fibonacci) outside Value Area Low ({val}).")
         reasoning_bullets.append("3. Confirmation: 25-day EMA mean reversion potential at major structural demand.")
-        reasoning_bullets.append(f"4. Execution: 1:2.0 target to POC ({poc}) with controlled stop.")
+        reasoning_bullets.append(f"4. Execution: 1:2.0 target (TP: ₹{tp:.2f}, SL: ₹{sl:.2f}).")
 
     # Scenario D: Deep Fibonacci Premium in Bearish Trend
-    elif spot_price >= vah and spot_price >= fib.get("deep_premium_705", 1e9):
+    elif spot_price >= vah and spot_price >= fib.get("deep_premium_705", 1e9) and trend_bearish:
         action = "SELL"
         setup_name = "INSTITUTIONAL_DEEP_PREMIUM_FADE"
         entry = spot_price
-        sl = round(fib.get("deep_premium_886", entry * 1.005) + (entry * 0.001), 2)
-        tp = round(poc, 2)
-        reasoning_bullets.append("1. Environment: Volatility dampening regime. Market makers fading rallies.")
+        raw_sl = round(fib.get("deep_premium_886", entry * 1.005) + (entry * 0.001), 2)
+        min_risk = entry * 0.006
+        sl = round(max(raw_sl, entry + min_risk), 2)
+        risk_dist = max(sl - entry, min_risk)
+        tp = round(entry - (risk_dist * 2.0), 2)
+        reasoning_bullets.append("1. Environment: Volatility dampening regime. Market makers fading rallies in downtrend.")
         reasoning_bullets.append(f"2. Location: Institutional Deep Premium (0.705-0.786 Fibonacci) outside Value Area High ({vah}).")
-        reasoning_bullets.append(f"3. Confirmation: Heavy Call writing resistance defense at Call Wall ({gex.get('call_wall')}).")
-        reasoning_bullets.append(f"4. Execution: Target mean reversion down to POC ({poc}).")
+        reasoning_bullets.append("3. Confirmation: Heavy Call writing resistance defense at Call Wall.")
+        reasoning_bullets.append(f"4. Execution: Target mean reversion down (TP: ₹{tp:.2f}, SL: ₹{sl:.2f}).")
 
     else:
         action = "PASS"
@@ -907,8 +926,11 @@ def generate_institutional_ai_signal(
         entry = spot_price
         sl = spot_price
         tp = spot_price
-        reasoning_bullets.append(f"Price ({spot_price}) is trading inside the chop zone between VAL ({val}) and VAH ({vah}).")
-        reasoning_bullets.append("Institutional discipline mandates waiting for a liquidity sweep or Deep Discount/Premium zone before entering.")
+        if trend_bearish:
+            reasoning_bullets.append(f"Price ({spot_price}) is in a confirmed downtrend below EMA 20/50. Counter-trend long entries prohibited.")
+        else:
+            reasoning_bullets.append(f"Price ({spot_price}) is trading inside the chop zone between VAL ({val}) and VAH ({vah}).")
+        reasoning_bullets.append("Institutional discipline mandates waiting for a high-probability liquidity sweep or Deep Discount extreme before entering.")
         reasoning_bullets.append("No low-probability trades taken in the middle of Value Area.")
 
     # Calculate Risk-Reward and Fees

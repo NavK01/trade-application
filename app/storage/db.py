@@ -299,10 +299,10 @@ class DatabaseManager:
                 if cursor.fetchone()["n"] == 0:
                     cursor.execute("""
                         INSERT INTO account_state
-                        (id, account_id, account_name, initial_capital, available_cash, total_realized_pnl, auto_execute, updated_at)
-                        VALUES (?, ?, ?, ?, ?, 0.0, ?, ?)
+                        (account_id, account_name, initial_capital, available_cash, total_realized_pnl, auto_execute, updated_at)
+                        VALUES (?, ?, ?, ?, 0.0, ?, ?)
                     """, (
-                        idx, account_id, name, init_cap, init_cap,
+                        account_id, name, init_cap, init_cap,
                         1 if settings.AUTO_EXECUTE_DEFAULT else 0, now,
                     ))
                 else:

@@ -2319,3 +2319,903 @@ fired on this window, so the AI did not change the trade set — it confirmed it
 - Caveat: 5 sessions is a small sample. This is a promising, mechanism-driven
   result, not proof. The next honest step is a 1-year hourly FAROM run to see
   whether the fee-clearing exit holds up out of sample.
+
+---
+
+## Iteration 19: Autonomous 3-Phase Self-Healing Cycle (2026-11-04 19:49:53 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 25.0% | Net P&L: ₹-45.51 | PF: 0.6 | Max DD: 0.96%
+* **Token Usage Status:** Gemini In: 197,180 / 10M | Gemini Out: 5,974 / 3M | DeepSeek: 1,979,453 / 10M
+* **Mutated Parameters:** Target: 1.25% | Sweep Vol Mult: 2.1x | Breakeven Trigger: 1.25R | SL: 0.55%
+
+---
+
+## Iteration 20: Autonomous 3-Phase Self-Healing Cycle (2026-11-04 19:57:10 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 9 trades | Win%: 44.4% | Net P&L: ₹+8.68 | PF: 1.1 | Max DD: 27.02%
+* **Token Usage Status:** Gemini In: 198,985 / 10M | Gemini Out: 6,500 / 3M | DeepSeek: 2,015,003 / 10M
+* **Mutated Parameters:** Target: 1.45% | Sweep Vol Mult: 2.45x | Breakeven Trigger: 1.0R | SL: 0.65%
+
+---
+
+## Iteration 21: Autonomous 3-Phase Self-Healing Cycle (2026-11-04 20:05:00 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 10 trades | Win%: 50.0% | Net P&L: ₹+5.90 | PF: 1.08 | Max DD: 0.38%
+* **Token Usage Status:** Gemini In: 200,806 / 10M | Gemini Out: 7,095 / 3M | DeepSeek: 2,054,089 / 10M
+* **Mutated Parameters:** Target: 1.25% | Sweep Vol Mult: 2.65x | Breakeven Trigger: 0.85R | SL: 0.7%
+
+---
+
+## Iteration 22: Autonomous 3-Phase Self-Healing Cycle (2026-11-04 20:11:54 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 53.8% | Net P&L: ₹-2.70 | PF: 0.98 | Max DD: 27.1%
+* **Token Usage Status:** Gemini In: 202,824 / 10M | Gemini Out: 7,713 / 3M | DeepSeek: 2,114,027 / 10M
+* **Mutated Parameters:** Target: 1.45% | Sweep Vol Mult: 2.85x | Breakeven Trigger: 1.05R | SL: 0.75%
+
+---
+
+## Iteration 23: Autonomous 3-Phase Self-Healing Cycle (2026-11-04 20:19:03 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 38.5% | Net P&L: ₹-49.04 | PF: 0.63 | Max DD: 27.41%
+* **Token Usage Status:** Gemini In: 205,250 / 10M | Gemini Out: 8,279 / 3M | DeepSeek: 2,149,862 / 10M
+* **Mutated Parameters:** Target: 1.15% | Sweep Vol Mult: 2.15x | Breakeven Trigger: 0.85R | SL: 0.55%
+
+---
+
+## Iteration 24: Autonomous 3-Phase Self-Healing Cycle (2026-11-04 20:26:22 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 11 trades | Win%: 27.3% | Net P&L: ₹-24.53 | PF: 0.73 | Max DD: 27.11%
+* **Token Usage Status:** Gemini In: 207,687 / 10M | Gemini Out: 8,878 / 3M | DeepSeek: 2,179,201 / 10M
+* **Mutated Parameters:** Target: 0.95% | Sweep Vol Mult: 2.45x | Breakeven Trigger: 1.05R | SL: 0.68%
+
+---
+
+## Iteration 25: Autonomous 3-Phase Self-Healing Cycle (2026-11-04 20:33:46 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 14 trades | Win%: 42.9% | Net P&L: ₹-42.27 | PF: 0.67 | Max DD: 27.1%
+* **Token Usage Status:** Gemini In: 210,117 / 10M | Gemini Out: 9,465 / 3M | DeepSeek: 2,239,420 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.75x | Breakeven Trigger: 1.15R | SL: 0.55%
+
+---
+
+## Iteration 26: Autonomous 3-Phase Self-Healing Cycle (2026-11-04 20:41:18 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 11 trades | Win%: 45.5% | Net P&L: ₹+30.11 | PF: 1.39 | Max DD: 26.84%
+* **Token Usage Status:** Gemini In: 212,123 / 10M | Gemini Out: 10,013 / 3M | DeepSeek: 2,265,847 / 10M
+* **Mutated Parameters:** Target: 1.25% | Sweep Vol Mult: 2.9x | Breakeven Trigger: 1.05R | SL: 0.65%
+
+---
+
+## Iteration 27: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 04:41:40 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 33.3% | Net P&L: ₹-25.31 | PF: 0.74 | Max DD: 27.11%
+* **Token Usage Status:** Gemini In: 214,546 / 10M | Gemini Out: 10,612 / 3M | DeepSeek: 2,279,240 / 10M
+* **Mutated Parameters:** Target: 1.25% | Sweep Vol Mult: 1.85x | Breakeven Trigger: 1.25R | SL: 0.55%
+
+---
+
+## Iteration 28: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 04:48:46 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 11 trades | Win%: 45.5% | Net P&L: ₹-23.12 | PF: 0.78 | Max DD: 27.01%
+* **Token Usage Status:** Gemini In: 216,560 / 10M | Gemini Out: 11,153 / 3M | DeepSeek: 2,283,498 / 10M
+* **Mutated Parameters:** Target: 1.45% | Sweep Vol Mult: 2.15x | Breakeven Trigger: 1.0R | SL: 0.65%
+
+---
+
+## Iteration 29: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 04:56:00 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 10 trades | Win%: 50.0% | Net P&L: ₹+7.06 | PF: 1.09 | Max DD: 0.5%
+* **Token Usage Status:** Gemini In: 218,366 / 10M | Gemini Out: 11,719 / 3M | DeepSeek: 2,287,489 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.35x | Breakeven Trigger: 0.85R | SL: 0.7%
+
+---
+
+## Iteration 30: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 05:02:53 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 50.0% | Net P&L: ₹-4.60 | PF: 0.95 | Max DD: 0.29%
+* **Token Usage Status:** Gemini In: 220,382 / 10M | Gemini Out: 12,356 / 3M | DeepSeek: 2,293,944 / 10M
+* **Mutated Parameters:** Target: 1.45% | Sweep Vol Mult: 2.55x | Breakeven Trigger: 1.15R | SL: 0.65%
+
+---
+
+## Iteration 31: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 05:10:27 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 9 trades | Win%: 55.6% | Net P&L: ₹+16.24 | PF: 1.26 | Max DD: 26.66%
+* **Token Usage Status:** Gemini In: 221,989 / 10M | Gemini Out: 12,882 / 3M | DeepSeek: 2,297,396 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.75x | Breakeven Trigger: 0.95R | SL: 0.7%
+
+---
+
+## Iteration 32: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 05:17:16 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 38.5% | Net P&L: ₹-58.84 | PF: 0.56 | Max DD: 27.36%
+* **Token Usage Status:** Gemini In: 221,989 / 10M | Gemini Out: 12,882 / 3M | DeepSeek: 2,303,016 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 33: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 05:25:16 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 15 trades | Win%: 33.3% | Net P&L: ₹-46.70 | PF: 0.61 | Max DD: 27.25%
+* **Token Usage Status:** Gemini In: 224,384 / 10M | Gemini Out: 13,514 / 3M | DeepSeek: 2,307,880 / 10M
+* **Mutated Parameters:** Target: 1.5% | Sweep Vol Mult: 2.4x | Breakeven Trigger: 1.25R | SL: 0.6%
+
+---
+
+## Iteration 34: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 05:33:02 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 10 trades | Win%: 50.0% | Net P&L: ₹-1.17 | PF: 0.99 | Max DD: 26.9%
+* **Token Usage Status:** Gemini In: 226,190 / 10M | Gemini Out: 14,075 / 3M | DeepSeek: 2,312,474 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.65x | Breakeven Trigger: 1.0R | SL: 0.7%
+
+---
+
+## Iteration 35: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 05:39:55 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 53.8% | Net P&L: ₹-44.30 | PF: 0.68 | Max DD: 27.3%
+* **Token Usage Status:** Gemini In: 226,190 / 10M | Gemini Out: 14,075 / 3M | DeepSeek: 2,318,328 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 36: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 05:47:45 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 38.5% | Net P&L: ₹-26.06 | PF: 0.75 | Max DD: 27.09%
+* **Token Usage Status:** Gemini In: 228,611 / 10M | Gemini Out: 14,620 / 3M | DeepSeek: 2,324,243 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.35x | Breakeven Trigger: 1.25R | SL: 0.6%
+
+---
+
+## Iteration 37: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 05:54:56 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 10 trades | Win%: 40.0% | Net P&L: ₹-23.63 | PF: 0.76 | Max DD: 26.92%
+* **Token Usage Status:** Gemini In: 230,614 / 10M | Gemini Out: 15,124 / 3M | DeepSeek: 2,329,606 / 10M
+* **Mutated Parameters:** Target: 1.25% | Sweep Vol Mult: 2.65x | Breakeven Trigger: 1.0R | SL: 0.7%
+
+---
+
+## Iteration 38: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 06:02:36 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 50.0% | Net P&L: ₹+30.55 | PF: 1.38 | Max DD: 26.84%
+* **Token Usage Status:** Gemini In: 232,646 / 10M | Gemini Out: 15,739 / 3M | DeepSeek: 2,335,385 / 10M
+* **Mutated Parameters:** Target: 1.1% | Sweep Vol Mult: 2.85x | Breakeven Trigger: 0.85R | SL: 0.75%
+
+---
+
+## Iteration 39: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 06:09:50 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 15 trades | Win%: 40.0% | Net P&L: ₹-38.01 | PF: 0.74 | Max DD: 27.28%
+* **Token Usage Status:** Gemini In: 235,085 / 10M | Gemini Out: 16,392 / 3M | DeepSeek: 2,342,020 / 10M
+* **Mutated Parameters:** Target: 0.95% | Sweep Vol Mult: 2.1x | Breakeven Trigger: 0.85R | SL: 0.55%
+
+---
+
+## Iteration 40: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 06:17:15 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 33.3% | Net P&L: ₹-14.75 | PF: 0.82 | Max DD: 26.8%
+* **Token Usage Status:** Gemini In: 237,523 / 10M | Gemini Out: 16,941 / 3M | DeepSeek: 2,348,418 / 10M
+* **Mutated Parameters:** Target: 1.25% | Sweep Vol Mult: 2.45x | Breakeven Trigger: 1.15R | SL: 0.65%
+
+---
+
+## Iteration 41: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 06:25:09 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 46.2% | Net P&L: ₹-1.35 | PF: 0.99 | Max DD: 0.74%
+* **Token Usage Status:** Gemini In: 239,759 / 10M | Gemini Out: 17,508 / 3M | DeepSeek: 2,353,002 / 10M
+* **Mutated Parameters:** Target: 1.4% | Sweep Vol Mult: 2.65x | Breakeven Trigger: 1.05R | SL: 0.72%
+
+---
+
+## Iteration 42: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 06:32:56 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 14 trades | Win%: 42.9% | Net P&L: ₹-24.09 | PF: 0.82 | Max DD: 0.87%
+* **Token Usage Status:** Gemini In: 242,190 / 10M | Gemini Out: 18,130 / 3M | DeepSeek: 2,359,169 / 10M
+* **Mutated Parameters:** Target: 1.15% | Sweep Vol Mult: 2.85x | Breakeven Trigger: 0.9R | SL: 0.55%
+
+---
+
+## Iteration 43: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 06:40:09 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 107 trades | Win%: 43.9% | Net P&L: ₹-396.17 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 10 trades | Win%: 40.0% | Net P&L: ₹-10.22 | PF: 0.89 | Max DD: 26.97%
+* **Token Usage Status:** Gemini In: 244,218 / 10M | Gemini Out: 18,712 / 3M | DeepSeek: 2,364,737 / 10M
+* **Mutated Parameters:** Target: 1.05% | Sweep Vol Mult: 2.95x | Breakeven Trigger: 0.85R | SL: 0.65%
+
+---
+
+## Iteration 44: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 06:47:50 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 43.5% | Net P&L: ₹-398.99 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 38.5% | Net P&L: ₹-25.09 | PF: 0.77 | Max DD: 27.15%
+* **Token Usage Status:** Gemini In: 244,218 / 10M | Gemini Out: 18,712 / 3M | DeepSeek: 2,371,076 / 10M
+* **Mutated Parameters:** Target: 1.1% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 45: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 06:52:58 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 43.5% | Net P&L: ₹-399.39 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 15 trades | Win%: 26.7% | Net P&L: ₹-37.50 | PF: 0.7 | Max DD: 27.25%
+* **Token Usage Status:** Gemini In: 246,628 / 10M | Gemini Out: 19,231 / 3M | DeepSeek: 2,377,825 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 1.8x | Breakeven Trigger: 1.25R | SL: 0.55%
+
+---
+
+## Iteration 46: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 07:00:41 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-390.19 | PF: 0.82
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 41.7% | Net P&L: ₹-19.99 | PF: 0.8 | Max DD: 27.03%
+* **Token Usage Status:** Gemini In: 248,846 / 10M | Gemini Out: 19,834 / 3M | DeepSeek: 2,383,417 / 10M
+* **Mutated Parameters:** Target: 1.45% | Sweep Vol Mult: 2.2x | Breakeven Trigger: 1.05R | SL: 0.65%
+
+---
+
+## Iteration 47: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 07:08:10 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-388.19 | PF: 0.82
+* **Phase 2 (1M OOS DeepSeek):** 8 trades | Win%: 50.0% | Net P&L: ₹+19.19 | PF: 1.33 | Max DD: 26.66%
+* **Token Usage Status:** Gemini In: 250,464 / 10M | Gemini Out: 20,353 / 3M | DeepSeek: 2,387,440 / 10M
+* **Mutated Parameters:** Target: 1.25% | Sweep Vol Mult: 2.45x | Breakeven Trigger: 0.9R | SL: 0.72%
+
+---
+
+## Iteration 48: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 07:15:25 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-394.59 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 15 trades | Win%: 53.3% | Net P&L: ₹-19.60 | PF: 0.87 | Max DD: 27.19%
+* **Token Usage Status:** Gemini In: 252,673 / 10M | Gemini Out: 20,938 / 3M | DeepSeek: 2,392,747 / 10M
+* **Mutated Parameters:** Target: 1.45% | Sweep Vol Mult: 2.75x | Breakeven Trigger: 1.15R | SL: 0.65%
+
+---
+
+## Iteration 49: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 07:23:14 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-392.99 | PF: 0.81
+* **Phase 2 (1M OOS DeepSeek):** 11 trades | Win%: 45.5% | Net P&L: ₹-12.63 | PF: 0.86 | Max DD: 26.97%
+* **Token Usage Status:** Gemini In: 254,687 / 10M | Gemini Out: 21,510 / 3M | DeepSeek: 2,396,739 / 10M
+* **Mutated Parameters:** Target: 1.15% | Sweep Vol Mult: 2.9x | Breakeven Trigger: 0.95R | SL: 0.55%
+
+---
+
+## Iteration 50: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 07:30:48 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-385.00 | PF: 0.82
+* **Phase 2 (1M OOS DeepSeek):** 9 trades | Win%: 33.3% | Net P&L: ₹-24.11 | PF: 0.7 | Max DD: 0.58%
+* **Token Usage Status:** Gemini In: 256,714 / 10M | Gemini Out: 22,129 / 3M | DeepSeek: 2,401,514 / 10M
+* **Mutated Parameters:** Target: 1.05% | Sweep Vol Mult: 3.0x | Breakeven Trigger: 1.15R | SL: 0.68%
+
+---
+
+## Iteration 51: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 07:38:15 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-377.80 | PF: 0.82
+* **Phase 2 (1M OOS DeepSeek):** 15 trades | Win%: 40.0% | Net P&L: ₹-32.05 | PF: 0.78 | Max DD: 27.32%
+* **Token Usage Status:** Gemini In: 259,140 / 10M | Gemini Out: 22,658 / 3M | DeepSeek: 2,407,379 / 10M
+* **Mutated Parameters:** Target: 1.15% | Sweep Vol Mult: 2.1x | Breakeven Trigger: 0.85R | SL: 0.5%
+
+---
+
+## Iteration 52: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 07:46:47 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-371.40 | PF: 0.82
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 25.0% | Net P&L: ₹-32.13 | PF: 0.68 | Max DD: 27.18%
+* **Token Usage Status:** Gemini In: 259,140 / 10M | Gemini Out: 22,658 / 3M | DeepSeek: 2,412,929 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 53: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 07:54:32 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-360.61 | PF: 0.83
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 30.8% | Net P&L: ₹-41.96 | PF: 0.64 | Max DD: 27.31%
+* **Token Usage Status:** Gemini In: 261,559 / 10M | Gemini Out: 23,210 / 3M | DeepSeek: 2,417,985 / 10M
+* **Mutated Parameters:** Target: 1.0% | Sweep Vol Mult: 2.4x | Breakeven Trigger: 0.9R | SL: 0.6%
+
+---
+
+## Iteration 54: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 08:02:23 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-352.62 | PF: 0.83
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 41.7% | Net P&L: ₹+3.54 | PF: 1.04 | Max DD: 27.05%
+* **Token Usage Status:** Gemini In: 263,777 / 10M | Gemini Out: 23,854 / 3M | DeepSeek: 2,422,782 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.7x | Breakeven Trigger: 1.25R | SL: 0.7%
+
+---
+
+## Iteration 55: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 08:10:47 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-327.83 | PF: 0.84
+* **Phase 2 (1M OOS DeepSeek):** 15 trades | Win%: 46.7% | Net P&L: ₹-4.27 | PF: 0.97 | Max DD: 27.23%
+* **Token Usage Status:** Gemini In: 266,219 / 10M | Gemini Out: 24,414 / 3M | DeepSeek: 2,428,653 / 10M
+* **Mutated Parameters:** Target: 1.15% | Sweep Vol Mult: 2.9x | Breakeven Trigger: 1.05R | SL: 0.75%
+
+---
+
+## Iteration 56: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 08:18:23 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-308.24 | PF: 0.85
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 53.8% | Net P&L: ₹-13.12 | PF: 0.88 | Max DD: 27.05%
+* **Token Usage Status:** Gemini In: 268,235 / 10M | Gemini Out: 24,998 / 3M | DeepSeek: 2,434,041 / 10M
+* **Mutated Parameters:** Target: 1.45% | Sweep Vol Mult: 3.0x | Breakeven Trigger: 1.25R | SL: 0.6%
+
+---
+
+## Iteration 57: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 08:25:57 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-319.44 | PF: 0.85
+* **Phase 2 (1M OOS DeepSeek):** 8 trades | Win%: 50.0% | Net P&L: ₹+2.69 | PF: 1.05 | Max DD: 26.65%
+* **Token Usage Status:** Gemini In: 269,850 / 10M | Gemini Out: 25,622 / 3M | DeepSeek: 2,438,350 / 10M
+* **Mutated Parameters:** Target: 1.15% | Sweep Vol Mult: 2.2x | Breakeven Trigger: 0.9R | SL: 0.7%
+
+---
+
+## Iteration 58: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 08:33:42 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-312.64 | PF: 0.85
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 58.3% | Net P&L: ₹+26.66 | PF: 1.31 | Max DD: 26.78%
+* **Token Usage Status:** Gemini In: 269,850 / 10M | Gemini Out: 25,622 / 3M | DeepSeek: 2,443,943 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 59: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 08:42:06 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-303.05 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 41.7% | Net P&L: ₹-16.46 | PF: 0.81 | Max DD: 26.91%
+* **Token Usage Status:** Gemini In: 272,067 / 10M | Gemini Out: 26,368 / 3M | DeepSeek: 2,448,546 / 10M
+* **Mutated Parameters:** Target: 1.0% | Sweep Vol Mult: 2.4x | Breakeven Trigger: 1.15R | SL: 0.55%
+
+---
+
+## Iteration 60: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 08:50:31 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-307.05 | PF: 0.85
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 53.8% | Net P&L: ₹-27.87 | PF: 0.76 | Max DD: 27.09%
+* **Token Usage Status:** Gemini In: 274,065 / 10M | Gemini Out: 26,941 / 3M | DeepSeek: 2,453,671 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.65x | Breakeven Trigger: 0.95R | SL: 0.65%
+
+---
+
+## Iteration 61: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 08:59:15 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-321.44 | PF: 0.85
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 46.2% | Net P&L: ₹-4.05 | PF: 0.96 | Max DD: 27.07%
+* **Token Usage Status:** Gemini In: 274,065 / 10M | Gemini Out: 26,941 / 3M | DeepSeek: 2,456,869 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 62: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 09:07:57 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-308.24 | PF: 0.85
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 38.5% | Net P&L: ₹-41.44 | PF: 0.66 | Max DD: 27.18%
+* **Token Usage Status:** Gemini In: 274,065 / 10M | Gemini Out: 26,941 / 3M | DeepSeek: 2,463,271 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 63: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 09:15:45 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-311.44 | PF: 0.85
+* **Phase 2 (1M OOS DeepSeek):** 10 trades | Win%: 30.0% | Net P&L: ₹-32.02 | PF: 0.68 | Max DD: 0.72%
+* **Token Usage Status:** Gemini In: 276,279 / 10M | Gemini Out: 27,503 / 3M | DeepSeek: 2,468,870 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.4x | Breakeven Trigger: 0.85R | SL: 0.6%
+
+---
+
+## Iteration 64: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 09:23:22 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-312.24 | PF: 0.85
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 33.3% | Net P&L: ₹-47.54 | PF: 0.5 | Max DD: 27.06%
+* **Token Usage Status:** Gemini In: 276,279 / 10M | Gemini Out: 27,503 / 3M | DeepSeek: 2,472,861 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 65: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 09:30:56 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-306.25 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 30.8% | Net P&L: ₹-59.96 | PF: 0.55 | Max DD: 27.37%
+* **Token Usage Status:** Gemini In: 278,683 / 10M | Gemini Out: 28,070 / 3M | DeepSeek: 2,479,077 / 10M
+* **Mutated Parameters:** Target: 1.5% | Sweep Vol Mult: 2.4x | Breakeven Trigger: 1.25R | SL: 0.6%
+
+---
+
+## Iteration 66: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 09:38:46 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 9 trades | Win%: 55.6% | Net P&L: ₹+1.89 | PF: 1.02 | Max DD: 0.46%
+* **Token Usage Status:** Gemini In: 280,268 / 10M | Gemini Out: 28,706 / 3M | DeepSeek: 2,483,336 / 10M
+* **Mutated Parameters:** Target: 1.65% | Sweep Vol Mult: 2.65x | Breakeven Trigger: 1.0R | SL: 0.68%
+
+---
+
+## Iteration 67: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 09:45:46 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-305.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 10 trades | Win%: 50.0% | Net P&L: ₹-16.56 | PF: 0.8 | Max DD: 26.92%
+* **Token Usage Status:** Gemini In: 282,076 / 10M | Gemini Out: 29,284 / 3M | DeepSeek: 2,487,611 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.85x | Breakeven Trigger: 0.85R | SL: 0.74%
+
+---
+
+## Iteration 68: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 09:52:44 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-305.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 38.5% | Net P&L: ₹-64.35 | PF: 0.52 | Max DD: 27.2%
+* **Token Usage Status:** Gemini In: 282,076 / 10M | Gemini Out: 29,284 / 3M | DeepSeek: 2,493,486 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 69: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 10:00:17 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-305.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 41.7% | Net P&L: ₹-47.27 | PF: 0.61 | Max DD: 27.3%
+* **Token Usage Status:** Gemini In: 284,289 / 10M | Gemini Out: 29,888 / 3M | DeepSeek: 2,498,855 / 10M
+* **Mutated Parameters:** Target: 1.45% | Sweep Vol Mult: 2.4x | Breakeven Trigger: 0.9R | SL: 0.6%
+
+---
+
+## Iteration 70: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 10:07:32 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-305.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 9 trades | Win%: 55.6% | Net P&L: ₹+21.86 | PF: 1.34 | Max DD: 26.71%
+* **Token Usage Status:** Gemini In: 284,289 / 10M | Gemini Out: 29,888 / 3M | DeepSeek: 2,502,554 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 71: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 10:15:09 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-305.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 11 trades | Win%: 27.3% | Net P&L: ₹-29.96 | PF: 0.7 | Max DD: 27.21%
+* **Token Usage Status:** Gemini In: 286,709 / 10M | Gemini Out: 30,561 / 3M | DeepSeek: 2,508,201 / 10M
+* **Mutated Parameters:** Target: 1.5% | Sweep Vol Mult: 2.4x | Breakeven Trigger: 1.25R | SL: 0.6%
+
+---
+
+## Iteration 72: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 10:23:04 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-305.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 11 trades | Win%: 45.5% | Net P&L: ₹-8.54 | PF: 0.9 | Max DD: 26.88%
+* **Token Usage Status:** Gemini In: 286,709 / 10M | Gemini Out: 30,561 / 3M | DeepSeek: 2,512,462 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 73: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 10:31:16 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 15 trades | Win%: 33.3% | Net P&L: ₹-45.48 | PF: 0.65 | Max DD: 0.99%
+* **Token Usage Status:** Gemini In: 289,122 / 10M | Gemini Out: 31,107 / 3M | DeepSeek: 2,518,309 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.4x | Breakeven Trigger: 1.25R | SL: 0.55%
+
+---
+
+## Iteration 74: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 10:38:53 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 10 trades | Win%: 60.0% | Net P&L: ₹+44.84 | PF: 1.67 | Max DD: 26.69%
+* **Token Usage Status:** Gemini In: 289,122 / 10M | Gemini Out: 31,107 / 3M | DeepSeek: 2,522,848 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 75: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 10:46:30 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 25.0% | Net P&L: ₹-73.06 | PF: 0.36 | Max DD: 27.28%
+* **Token Usage Status:** Gemini In: 289,122 / 10M | Gemini Out: 31,107 / 3M | DeepSeek: 2,528,721 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 76: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 10:54:39 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 16.7% | Net P&L: ₹-48.89 | PF: 0.55 | Max DD: 27.33%
+* **Token Usage Status:** Gemini In: 289,122 / 10M | Gemini Out: 31,107 / 3M | DeepSeek: 2,534,660 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 77: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 11:02:33 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 33.3% | Net P&L: ₹-30.23 | PF: 0.72 | Max DD: 0.84%
+* **Token Usage Status:** Gemini In: 291,545 / 10M | Gemini Out: 31,675 / 3M | DeepSeek: 2,540,255 / 10M
+* **Mutated Parameters:** Target: 1.4% | Sweep Vol Mult: 2.35x | Breakeven Trigger: 1.25R | SL: 0.58%
+
+---
+
+## Iteration 78: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 11:10:05 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 11 trades | Win%: 36.4% | Net P&L: ₹-40.77 | PF: 0.64 | Max DD: 27.04%
+* **Token Usage Status:** Gemini In: 291,545 / 10M | Gemini Out: 31,675 / 3M | DeepSeek: 2,545,334 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 79: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 11:17:57 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 8 trades | Win%: 37.5% | Net P&L: ₹+7.90 | PF: 1.13 | Max DD: 26.81%
+* **Token Usage Status:** Gemini In: 291,545 / 10M | Gemini Out: 31,675 / 3M | DeepSeek: 2,551,030 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 80: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 11:26:09 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 25.0% | Net P&L: ₹-40.96 | PF: 0.68 | Max DD: 27.42%
+* **Token Usage Status:** Gemini In: 293,947 / 10M | Gemini Out: 32,210 / 3M | DeepSeek: 2,555,901 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.4x | Breakeven Trigger: 0.85R | SL: 0.6%
+
+---
+
+## Iteration 81: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 11:34:12 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 33.3% | Net P&L: ₹-16.77 | PF: 0.8 | Max DD: 26.97%
+* **Token Usage Status:** Gemini In: 296,375 / 10M | Gemini Out: 32,740 / 3M | DeepSeek: 2,560,972 / 10M
+* **Mutated Parameters:** Target: 1.15% | Sweep Vol Mult: 2.65x | Breakeven Trigger: 1.1R | SL: 0.68%
+
+---
+
+## Iteration 82: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 11:41:46 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 41.7% | Net P&L: ₹-15.17 | PF: 0.85 | Max DD: 27.07%
+* **Token Usage Status:** Gemini In: 298,613 / 10M | Gemini Out: 33,276 / 3M | DeepSeek: 2,567,396 / 10M
+* **Mutated Parameters:** Target: 1.05% | Sweep Vol Mult: 2.85x | Breakeven Trigger: 0.9R | SL: 0.72%
+
+---
+
+## Iteration 83: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 11:49:34 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 14 trades | Win%: 42.9% | Net P&L: ₹-30.97 | PF: 0.79 | Max DD: 27.3%
+* **Token Usage Status:** Gemini In: 301,041 / 10M | Gemini Out: 33,812 / 3M | DeepSeek: 2,573,493 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.4x | Breakeven Trigger: 0.8R | SL: 0.55%
+
+---
+
+## Iteration 84: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 11:57:17 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 33.3% | Net P&L: ₹-8.60 | PF: 0.89 | Max DD: 26.78%
+* **Token Usage Status:** Gemini In: 303,468 / 10M | Gemini Out: 34,301 / 3M | DeepSeek: 2,578,492 / 10M
+* **Mutated Parameters:** Target: 1.15% | Sweep Vol Mult: 2.6x | Breakeven Trigger: 1.15R | SL: 0.65%
+
+---
+
+## Iteration 85: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 12:05:02 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 15 trades | Win%: 53.3% | Net P&L: ₹-4.59 | PF: 0.96 | Max DD: 27.12%
+* **Token Usage Status:** Gemini In: 305,689 / 10M | Gemini Out: 34,894 / 3M | DeepSeek: 2,585,127 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.8x | Breakeven Trigger: 1.0R | SL: 0.55%
+
+---
+
+## Iteration 86: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 12:12:58 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 7 trades | Win%: 42.9% | Net P&L: ₹-0.74 | PF: 0.99 | Max DD: 26.7%
+* **Token Usage Status:** Gemini In: 305,689 / 10M | Gemini Out: 34,894 / 3M | DeepSeek: 2,589,629 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 87: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 12:20:47 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 14 trades | Win%: 42.9% | Net P&L: ₹-29.13 | PF: 0.74 | Max DD: 27.13%
+* **Token Usage Status:** Gemini In: 308,102 / 10M | Gemini Out: 35,498 / 3M | DeepSeek: 2,595,736 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.4x | Breakeven Trigger: 1.25R | SL: 0.55%
+
+---
+
+## Iteration 88: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 12:28:11 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 11 trades | Win%: 54.5% | Net P&L: ₹+44.09 | PF: 1.52 | Max DD: 26.87%
+* **Token Usage Status:** Gemini In: 308,102 / 10M | Gemini Out: 35,498 / 3M | DeepSeek: 2,600,323 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 89: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 12:36:20 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 25.0% | Net P&L: ₹-40.42 | PF: 0.6 | Max DD: 27.19%
+* **Token Usage Status:** Gemini In: 308,102 / 10M | Gemini Out: 35,498 / 3M | DeepSeek: 2,605,722 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 90: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 12:45:26 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 12 trades | Win%: 33.3% | Net P&L: ₹-37.87 | PF: 0.66 | Max DD: 0.91%
+* **Token Usage Status:** Gemini In: 308,102 / 10M | Gemini Out: 35,498 / 3M | DeepSeek: 2,609,751 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 91: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 12:55:17 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 14 trades | Win%: 35.7% | Net P&L: ₹-37.04 | PF: 0.69 | Max DD: 27.26%
+* **Token Usage Status:** Gemini In: 308,102 / 10M | Gemini Out: 35,498 / 3M | DeepSeek: 2,615,358 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 92: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 13:03:09 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 11 trades | Win%: 27.3% | Net P&L: ₹-63.36 | PF: 0.47 | Max DD: 27.3%
+* **Token Usage Status:** Gemini In: 308,102 / 10M | Gemini Out: 35,498 / 3M | DeepSeek: 2,621,529 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 93: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 13:11:06 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 30.8% | Net P&L: ₹-53.94 | PF: 0.55 | Max DD: 0.83%
+* **Token Usage Status:** Gemini In: 308,102 / 10M | Gemini Out: 35,498 / 3M | DeepSeek: 2,624,742 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 94: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 13:22:04 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 30.8% | Net P&L: ₹-41.56 | PF: 0.64 | Max DD: 27.3%
+* **Token Usage Status:** Gemini In: 310,520 / 10M | Gemini Out: 36,029 / 3M | DeepSeek: 2,629,870 / 10M
+* **Mutated Parameters:** Target: 1.5% | Sweep Vol Mult: 2.4x | Breakeven Trigger: 1.2R | SL: 0.6%
+
+---
+
+## Iteration 95: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 13:29:56 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 8 trades | Win%: 62.5% | Net P&L: ₹+20.52 | PF: 1.38 | Max DD: 26.54%
+* **Token Usage Status:** Gemini In: 311,914 / 10M | Gemini Out: 36,642 / 3M | DeepSeek: 2,633,581 / 10M
+* **Mutated Parameters:** Target: 1.65% | Sweep Vol Mult: 2.65x | Breakeven Trigger: 1.0R | SL: 0.7%
+
+---
+
+## Iteration 96: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 13:36:58 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 7 trades | Win%: 57.1% | Net P&L: ₹-11.50 | PF: 0.74 | Max DD: 26.51%
+* **Token Usage Status:** Gemini In: 311,914 / 10M | Gemini Out: 36,642 / 3M | DeepSeek: 2,637,912 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 97: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 13:44:47 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 14 trades | Win%: 35.7% | Net P&L: ₹-39.69 | PF: 0.66 | Max DD: 27.09%
+* **Token Usage Status:** Gemini In: 311,914 / 10M | Gemini Out: 36,642 / 3M | DeepSeek: 2,643,817 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 98: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 13:53:05 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 14 trades | Win%: 42.9% | Net P&L: ₹-33.98 | PF: 0.72 | Max DD: 27.24%
+* **Token Usage Status:** Gemini In: 311,914 / 10M | Gemini Out: 36,642 / 3M | DeepSeek: 2,649,676 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 99: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 14:01:16 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 14 trades | Win%: 35.7% | Net P&L: ₹-37.33 | PF: 0.69 | Max DD: 27.12%
+* **Token Usage Status:** Gemini In: 314,319 / 10M | Gemini Out: 37,273 / 3M | DeepSeek: 2,655,070 / 10M
+* **Mutated Parameters:** Target: 1.35% | Sweep Vol Mult: 2.4x | Breakeven Trigger: 1.25R | SL: 0.55%
+
+---
+
+## Iteration 100: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 14:09:28 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 10 trades | Win%: 60.0% | Net P&L: ₹+57.36 | PF: 2.17 | Max DD: 26.57%
+* **Token Usage Status:** Gemini In: 314,319 / 10M | Gemini Out: 37,273 / 3M | DeepSeek: 2,659,623 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 101: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 14:17:55 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 13 trades | Win%: 30.8% | Net P&L: ₹-27.86 | PF: 0.74 | Max DD: 27.16%
+* **Token Usage Status:** Gemini In: 314,319 / 10M | Gemini Out: 37,273 / 3M | DeepSeek: 2,663,942 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 102: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 14:27:56 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 15 trades | Win%: 33.3% | Net P&L: ₹-49.64 | PF: 0.59 | Max DD: 27.14%
+* **Token Usage Status:** Gemini In: 314,319 / 10M | Gemini Out: 37,273 / 3M | DeepSeek: 2,665,040 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 103: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 14:40:57 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 17 trades | Win%: 29.4% | Net P&L: ₹-77.08 | PF: 0.49 | Max DD: 27.42%
+* **Token Usage Status:** Gemini In: 314,319 / 10M | Gemini Out: 37,273 / 3M | DeepSeek: 2,665,040 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 104: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 14:55:31 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 17 trades | Win%: 29.4% | Net P&L: ₹-77.08 | PF: 0.49 | Max DD: 27.42%
+* **Token Usage Status:** Gemini In: 314,319 / 10M | Gemini Out: 37,273 / 3M | DeepSeek: 2,665,040 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 105: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 15:10:06 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 17 trades | Win%: 29.4% | Net P&L: ₹-77.08 | PF: 0.49 | Max DD: 27.42%
+* **Token Usage Status:** Gemini In: 314,319 / 10M | Gemini Out: 37,273 / 3M | DeepSeek: 2,665,040 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 106: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 15:24:40 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 17 trades | Win%: 29.4% | Net P&L: ₹-77.08 | PF: 0.49 | Max DD: 27.42%
+* **Token Usage Status:** Gemini In: 314,319 / 10M | Gemini Out: 37,273 / 3M | DeepSeek: 2,665,040 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 107: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 15:39:14 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 17 trades | Win%: 29.4% | Net P&L: ₹-77.08 | PF: 0.49 | Max DD: 27.42%
+* **Token Usage Status:** Gemini In: 314,319 / 10M | Gemini Out: 37,273 / 3M | DeepSeek: 2,665,040 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 108: Autonomous 3-Phase Self-Healing Cycle (2026-11-05 15:53:50 UTC)
+
+* **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
+* **Phase 1 (1Y Baseline Zero AI):** 108 trades | Win%: 44.4% | Net P&L: ₹-299.45 | PF: 0.86
+* **Phase 2 (1M OOS DeepSeek):** 17 trades | Win%: 29.4% | Net P&L: ₹-77.08 | PF: 0.49 | Max DD: 27.42%
+* **Token Usage Status:** Gemini In: 314,319 / 10M | Gemini Out: 37,273 / 3M | DeepSeek: 2,665,040 / 10M
+* **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%

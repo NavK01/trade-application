@@ -105,11 +105,12 @@ settings = Settings()
 # Ensure workspace directory exists
 settings.absolute_workspace_dir.mkdir(parents=True, exist_ok=True)
 
-DEFAULT_ACCOUNT_ID = "deepseek_flash"
-ACCOUNT_IDS = ("opus_flash", "deepseek_flash")
+DEFAULT_ACCOUNT_ID = os.getenv("DEFAULT_ACCOUNT_ID", "deepseek_flash")
+ACCOUNT_IDS = ("opus_flash", "deepseek_flash", "gemini_optimized")
 ACCOUNT_NAMES = {
     "opus_flash": "Claude Opus 4.6 Thinking",
     "deepseek_flash": "DeepSeek 4.1 Flash MaaS",
+    "gemini_optimized": "Gemini 4 Optimized Quant",
 }
 
 

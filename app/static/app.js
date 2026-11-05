@@ -74,6 +74,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Top Nav Ticker & Action Elements
   const marketStatusDot = document.getElementById('market-status-dot');
   const marketStatusText = document.getElementById('market-status-text');
+  const serverRamTag = document.getElementById('server-ram-tag');
+  const serverCpuTag = document.getElementById('server-cpu-tag');
   const niftyVal = document.getElementById('nifty-val');
   const bankniftyVal = document.getElementById('banknifty-val');
   const sensexVal = document.getElementById('sensex-val');
@@ -488,15 +490,18 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         } else {
           positionsTbody.innerHTML = posList.map(p => {
-            const pnlCls = p.unrealized_pnl >= 0 ? 'val-green' : 'val-red';
-            const pnlSign = p.unrealized_pnl >= 0 ? '+' : '';
+            const avgPrice = Number(p.avg_price ?? p.average_price ?? 0);
+            const curPrice = Number(p.current_price ?? 0);
+            const unPnl = Number(p.unrealized_pnl ?? 0);
+            const pnlCls = unPnl >= 0 ? 'val-green' : 'val-red';
+            const pnlSign = unPnl >= 0 ? '+' : '';
             return `
               <tr>
                 <td><strong>${p.symbol}</strong></td>
                 <td>${p.quantity}</td>
-                <td>₹ ${p.average_price.toFixed(2)}</td>
-                <td>₹ ${p.current_price.toFixed(2)}</td>
-                <td class="${pnlCls}"><strong>${pnlSign}₹ ${p.unrealized_pnl.toFixed(2)}</strong></td>
+                <td>₹ ${avgPrice.toFixed(2)}</td>
+                <td>₹ ${curPrice.toFixed(2)}</td>
+                <td class="${pnlCls}"><strong>${pnlSign}₹ ${unPnl.toFixed(2)}</strong></td>
                 <td><button class="nav-btn btn-logout btn-close-single" data-sym="${p.symbol}" style="padding:2px 6px;font-size:9px;">Close</button></td>
               </tr>
             `;
@@ -734,9 +739,10 @@ document.addEventListener('DOMContentLoaded', () => {
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === 'market_snapshot') {
+          if (msg.type === 'market_tick' || msg.type === 'market_snapshot') {
             if (msg.indices) updateIndices(msg.indices);
-            if (msg.status) updateMarketStatus(msg.status);
+            if (msg.market_status) updateMarketStatus(msg.market_status);
+            else if (msg.status) updateMarketStatus(msg.status);
           }
         } catch (e) {}
       };
@@ -746,27 +752,81 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateIndices(idx) {
-    if (idx.NIFTY_50 && niftyVal) renderIndexItem(niftyVal, idx.NIFTY_50);
-    if (idx.SENSEX && sensexVal) renderIndexItem(sensexVal, idx.SENSEX);
-    if (idx.BANK_NIFTY && bankniftyVal) renderIndexItem(bankniftyVal, idx.BANK_NIFTY);
-    if (idx.INDIA_VIX && vixVal) vixVal.innerHTML = `<span>${idx.INDIA_VIX.price}</span>`;
+    if (!idx) return;
+    const n50 = idx.NIFTY_50 || idx.NIFTY || idx['^NSEI'];
+    const sen = idx.SENSEX || idx['^BSESN'];
+    const bnf = idx.BANK_NIFTY || idx.BANKNIFTY || idx['^NSEBANK'];
+    const vix = idx.INDIA_VIX || idx.VIX || idx['^INDIAVIX'];
+
+    if (n50 && niftyVal) renderIndexItem(niftyVal, n50);
+    if (sen && sensexVal) renderIndexItem(sensexVal, sen);
+    if (bnf && bankniftyVal) renderIndexItem(bankniftyVal, bnf);
+    if (vix && vixVal) {
+      const vixP = vix.price !== undefined ? vix.price : vix;
+      vixVal.innerHTML = `<span>${typeof vixP === 'number' ? vixP.toFixed(2) : vixP}</span>`;
+    }
   }
 
   function renderIndexItem(el, data) {
-    const cls = data.change >= 0 ? 'val-green' : 'val-red';
-    const sign = data.change >= 0 ? '+' : '';
-    el.innerHTML = `<span class="${cls}">${data.price.toLocaleString('en-IN')} (${sign}${data.change_pct}%)</span>`;
+    const price = data.price !== undefined ? data.price : 0;
+    const change = data.change !== undefined ? data.change : 0;
+    const chgPct = data.change_pct !== undefined ? data.change_pct : 0;
+    const cls = change >= 0 ? 'val-green' : 'val-red';
+    const sign = change >= 0 ? '+' : '';
+    el.innerHTML = `<span class="${cls}">${Number(price).toLocaleString('en-IN', {minimumFractionDigits: 1, maximumFractionDigits: 2})} (${sign}${chgPct}%)</span>`;
   }
 
   function updateMarketStatus(s) {
     if (!marketStatusDot || !marketStatusText) return;
-    marketStatusDot.className = `status-dot ${s.is_open ? 'dot-open' : 'dot-closed'}`;
-    marketStatusText.textContent = s.status_text || (s.is_open ? 'Market Open (NSE/BSE)' : 'Market Closed');
+    if (!s) return;
+    const isOpen = (s.is_open === true || s.status === 'OPEN');
+    marketStatusDot.className = `status-dot ${isOpen ? 'dot-open' : 'dot-closed'}`;
+    marketStatusText.textContent = isOpen ? 'NSE/BSE Market Open' : (s.description || 'Market Closed');
   }
 
-  // Periodic Refresh Loop (every 10s for real-time P&L and DeepSeek signal, every 30s for candles)
+  // REST Fallbacks & System Metrics
+  async function loadSystemHealth() {
+    try {
+      const res = await fetch('/api/health');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.system) {
+        if (serverRamTag && data.system.ram) {
+          serverRamTag.textContent = `RAM: ${data.system.ram.percent.toFixed(0)}%`;
+        }
+        if (serverCpuTag && data.system.cpu) {
+          serverCpuTag.textContent = `CPU: ${data.system.cpu.percent.toFixed(0)}%`;
+        }
+      }
+    } catch (e) {}
+  }
+
+  async function loadMarketStatus() {
+    try {
+      const res = await fetch('/api/trading/market-status');
+      if (!res.ok) return;
+      const data = await res.json();
+      updateMarketStatus(data);
+    } catch (e) {}
+  }
+
+  async function loadIndices() {
+    try {
+      const res = await fetch('/api/financial-advisor/indices');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.indices) {
+        updateIndices(data.indices);
+      }
+    } catch (e) {}
+  }
+
+  // Periodic Refresh Loop (every 10s for real-time P&L, status, indices, metrics, and DeepSeek signal, every 30s for candles)
   setInterval(() => {
     loadPortfolioAndPnL();
+    loadMarketStatus();
+    loadIndices();
+    loadSystemHealth();
     if (activeChartSymbol) {
       loadInstitutionalSignal(activeChartSymbol);
     }
@@ -781,7 +841,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize Terminal
   async function initAll() {
     initChart();
-    await loadPortfolioAndPnL();
+    await Promise.allSettled([
+      loadPortfolioAndPnL(),
+      loadMarketStatus(),
+      loadIndices(),
+      loadSystemHealth()
+    ]);
     connectMarketWebSocket();
   }
 

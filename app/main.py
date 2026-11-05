@@ -856,6 +856,7 @@ async def ws_market_stream(websocket: WebSocket):
             "watchlist": list(market_feed.cached_quotes.values()),
             "indices": get_indian_market_indices().get("indices", {}),
             "portfolio": execution_engine.get_portfolio_summary(),
+            "market_status": strategy_manager.get_market_status(),
         })
         while True:
             data = await q.get()

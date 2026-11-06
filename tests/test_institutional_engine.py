@@ -50,6 +50,27 @@ class TestInstitutionalEngine(unittest.TestCase):
         self.assertGreater(res["net_roi_pct"], 0)
         self.assertGreater(res["breakeven_points"], 0)
 
+    def test_delivery_charges_calculation(self):
+        """Delivery equity: STT on BOTH legs (0.1%) plus DP charges on the sell."""
+        buy_val = 200.0 * 50   # ₹10,000
+        sell_val = 210.0 * 50  # ₹10,500
+
+        intraday = calculate_indian_statutory_charges(
+            buy_value=buy_val, sell_value=sell_val, instrument_type="INTRADAY_EQUITY"
+        )
+        delivery = calculate_indian_statutory_charges(
+            buy_value=buy_val, sell_value=sell_val, instrument_type="DELIVERY_EQUITY"
+        )
+
+        expected_stt = round((buy_val + sell_val) * INDIAN_STATUTORY_RATES["STT_EQUITY_DELIVERY_BOTH"], 2)
+        self.assertAlmostEqual(delivery["stt"], expected_stt, delta=0.01)
+        self.assertEqual(delivery["dp_charges"], 13.5)
+        # Delivery must cost materially more than intraday on the same trade.
+        self.assertGreater(delivery["total_charges"], intraday["total_charges"])
+        self.assertAlmostEqual(
+            delivery["net_pnl"], round(delivery["gross_pnl"] - delivery["total_charges"], 2), delta=0.01
+        )
+
     def test_premarket_4lines(self):
         """Test calculation of PDH, PDL, PDC, and 1H Swing High/Low."""
         dates = pd.date_range("2026-10-27 09:15", "2026-10-28 15:30", freq="5min")

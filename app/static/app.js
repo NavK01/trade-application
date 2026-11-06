@@ -64,12 +64,30 @@ document.addEventListener('DOMContentLoaded', () => {
   // Ledger Elements
   const tabBtnPositions = document.getElementById('tab-btn-positions');
   const tabBtnHistory = document.getElementById('tab-btn-history');
+  const tabBtnDaily = document.getElementById('tab-btn-daily');
+  const tabBtnTruth = document.getElementById('tab-btn-truth');
   const tabPositions = document.getElementById('tab-positions');
   const tabHistory = document.getElementById('tab-history');
+  const tabDaily = document.getElementById('tab-daily');
+  const tabTruth = document.getElementById('tab-truth');
   const ledgerPosCount = document.getElementById('ledger-pos-count');
   const ledgerOrdersCount = document.getElementById('ledger-orders-count');
+  const ledgerDailyCount = document.getElementById('ledger-daily-count');
   const positionsTbody = document.getElementById('positions-tbody');
   const ordersTbody = document.getElementById('orders-tbody');
+  const dailyTbody = document.getElementById('daily-tbody');
+
+  // Paper-Truth (frozen baseline) Elements
+  const truthVerdictTag = document.getElementById('truth-verdict-tag');
+  const truthVerdict = document.getElementById('truth-verdict');
+  const truthReason = document.getElementById('truth-reason');
+  const truthTrades = document.getElementById('truth-trades');
+  const truthWin = document.getElementById('truth-win');
+  const truthPf = document.getElementById('truth-pf');
+  const truthNet = document.getElementById('truth-net');
+  const truthFees = document.getElementById('truth-fees');
+  const truthDd = document.getElementById('truth-dd');
+  const truthNote = document.getElementById('truth-note');
 
   // Top Nav Ticker & Action Elements
   const marketStatusDot = document.getElementById('market-status-dot');
@@ -437,12 +455,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       if (!data) return;
 
-      const cash = data.available_cash || 10000.0;
-      const totalEquity = data.total_equity || cash;
-      const realizedNet = data.realized_pnl || 0.0;
-      const unrealizedPnl = data.unrealized_pnl || 0.0;
-      const startCapital = 10000.0;
-      const netPct = ((totalEquity - startCapital) / startCapital) * 100;
+      // The portfolio API returns rupee-suffixed keys (e.g. total_portfolio_value_inr);
+      // the non-suffixed fallbacks keep older payloads working.
+      const startCapital = Number(data.initial_capital_inr ?? 10000.0);
+      const cash = Number(data.available_cash_inr ?? data.available_cash ?? startCapital);
+      const totalEquity = Number(data.total_portfolio_value_inr ?? data.total_equity ?? cash);
+      const realizedNet = Number(data.realized_pnl_inr ?? data.realized_pnl ?? 0.0);
+      const unrealizedPnl = Number(data.unrealized_pnl_inr ?? data.unrealized_pnl ?? 0.0);
+      const totalNet = Number(data.net_pnl_after_ai_inr ?? (totalEquity - startCapital));
+      const netPct = startCapital > 0 ? (totalNet / startCapital) * 100 : 0;
 
       // Master Strip Updates
       if (pnlCapitalVal) pnlCapitalVal.textContent = `₹ ${totalEquity.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
@@ -463,21 +484,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (pnlOpenPositionsCount) pnlOpenPositionsCount.textContent = `${posList.length} Open Positions`;
       if (ledgerPosCount) ledgerPosCount.textContent = posList.length;
 
-      // 0.5% Target Goal Progress Bar
-      if (targetBarFill && targetCurrentPct) {
-        targetCurrentPct.textContent = `${netPct >= 0 ? '+' : ''}${netPct.toFixed(2)}%`;
-        const fillW = Math.min(100, Math.max(0, (netPct / 0.50) * 100));
-        targetBarFill.style.width = `${fillW}%`;
-      }
-      if (targetLockBadge) {
-        if (netPct >= 0.50) {
-          targetLockBadge.className = 'badge-lock lock-halted';
-          targetLockBadge.textContent = 'PROFIT GOAL LOCKED (+0.5%)';
-        } else {
-          targetLockBadge.className = 'badge-lock lock-active';
-          targetLockBadge.textContent = 'TRADING ACTIVE';
-        }
-      }
+      // The 0.5% daily-goal bar and guardrail badges are driven by TODAY's
+      // realized net P&L (from the risk-state endpoint) inside
+      // loadDailyPerformance(), so they are not overwritten with all-time
+      // equity here.
 
       // Render Positions Table
       if (positionsTbody) {
@@ -520,8 +530,35 @@ document.addEventListener('DOMContentLoaded', () => {
       // Load Trade History Ledger
       loadOrdersHistory();
 
+      // Load Per-Day P&L Summary
+      loadDailyPerformance();
+
+      // Load Frozen-Baseline Paper-Truth Report
+      loadPaperTruth();
+
     } catch (e) {
       console.error('Error loading portfolio:', e);
+    }
+  }
+
+  function formatIstTime(ts) {
+    if (!ts) return '--:--';
+    try {
+      return new Date(ts).toLocaleTimeString('en-IN', {
+        hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata',
+      });
+    } catch (e) {
+      return String(ts).substring(11, 16);
+    }
+  }
+
+  function istDateString() {
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(new Date());
+    } catch (e) {
+      return new Date().toISOString().substring(0, 10);
     }
   }
 
@@ -534,20 +571,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (ordersTbody) {
         if (!orders.length) {
-          ordersTbody.innerHTML = '<tr><td colspan="6" class="table-empty">No orders executed yet today.</td></tr>';
+          ordersTbody.innerHTML = '<tr><td colspan="7" class="table-empty">No orders executed yet today.</td></tr>';
         } else {
-          ordersTbody.innerHTML = orders.slice(0, 15).map(o => {
-            const pnlCls = (o.pnl || 0) >= 0 ? 'val-green' : 'val-red';
-            const pnlSign = (o.pnl || 0) >= 0 ? '+' : '';
-            const t = o.timestamp ? o.timestamp.substring(11, 16) : '--:--';
+          ordersTbody.innerHTML = orders.slice(0, 25).map(o => {
+            const net = Number(o.pnl_inr ?? o.pnl ?? o.net_pnl ?? 0);
+            const fees = Number(o.fee_inr ?? o.fees ?? 0);
+            const gross = Number(o.gross_pnl_inr ?? 0);
+            const isExit = o.action === 'SELL';
+            const pnlCls = net > 0 ? 'val-green' : (net < 0 ? 'val-red' : 'val-muted');
+            const pnlSign = net > 0 ? '+' : '';
+            const t = formatIstTime(o.timestamp);
+            const reason = o.exit_reason
+              ? ` title="${o.exit_reason}${isExit ? ` • gross ₹${gross.toFixed(2)}` : ''}"`
+              : '';
             return `
-              <tr>
+              <tr${reason}>
                 <td>${t}</td>
                 <td><strong>${o.symbol}</strong></td>
                 <td class="${o.action === 'BUY' ? 'val-green' : 'val-red'}"><strong>${o.action}</strong></td>
-                <td>₹ ${(o.fill_price || o.price || 0).toFixed(2)}</td>
-                <td style="color:var(--text-muted);">₹ ${(o.fees || 0).toFixed(2)}</td>
-                <td class="${pnlCls}">${pnlSign}₹ ${(o.pnl || 0).toFixed(2)}</td>
+                <td>${o.quantity ?? '-'}</td>
+                <td>₹ ${Number(o.fill_price ?? o.price ?? 0).toFixed(2)}</td>
+                <td style="color:var(--text-muted);">₹ ${fees.toFixed(2)}</td>
+                <td class="${pnlCls}">${isExit ? `${pnlSign}₹ ${net.toFixed(2)}` : '—'}</td>
               </tr>
             `;
           }).join('');
@@ -555,6 +600,160 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (e) {
       console.error('Error loading orders history:', e);
+    }
+  }
+
+  // ==========================================================================
+  // 4b. PER-DAY PROFIT SUMMARY (Daily Performance Ledger)
+  // ==========================================================================
+  async function loadDailyPerformance() {
+    try {
+      const [dailyRes, riskRes] = await Promise.all([
+        fetch(`/api/performance/daily?account_id=${ACCOUNT_ID}&limit=30`),
+        fetch(`/api/trading/risk-state?account_id=${ACCOUNT_ID}`),
+      ]);
+      const dailyData = dailyRes.ok ? await dailyRes.json() : {};
+      const risk = riskRes.ok ? await riskRes.json() : null;
+      const history = dailyData.daily_history || [];
+
+      // Live "today" figures from the risk manager (realized net after AI cost).
+      const startEquity = Number((risk && risk.start_equity) ?? 10000.0);
+      const todayRealized = risk ? Number(risk.realized_pnl_today_inr ?? 0) : 0.0;
+      const todayNet = risk ? Number(risk.net_pnl_today_inr ?? todayRealized) : 0.0;
+      const todayNetPct = startEquity > 0 ? (todayNet / startEquity) * 100 : 0.0;
+
+      // Drive the 0.5% daily-goal bar with TODAY's realized net P&L.
+      if (targetBarFill && targetCurrentPct) {
+        targetCurrentPct.textContent = `${todayNetPct >= 0 ? '+' : ''}${todayNetPct.toFixed(2)}%`;
+        const fillW = Math.min(100, Math.max(0, (todayNetPct / 0.50) * 100));
+        targetBarFill.style.width = `${fillW}%`;
+      }
+      if (targetLockBadge) {
+        const locked = risk ? Boolean(risk.locked) : false;
+        if (todayNetPct >= 0.50 || locked) {
+          targetLockBadge.className = 'badge-lock lock-halted';
+          targetLockBadge.textContent = risk && risk.lock_reason ? 'TRADING LOCKED' : 'PROFIT GOAL LOCKED (+0.5%)';
+        } else {
+          targetLockBadge.className = 'badge-lock lock-active';
+          targetLockBadge.textContent = 'TRADING ACTIVE';
+        }
+      }
+
+      const rows = [];
+      const todayStr = istDateString();
+      const hasToday = history.some(h => String(h.date) === todayStr);
+      if (risk && !hasToday) {
+        rows.push({
+          date: `${todayStr} (live)`,
+          trades_count: risk.trades_today ?? 0,
+          win_rate_pct: null,
+          gross_pnl: null,
+          fees_inr: null,
+          net: todayRealized,
+          net_return_pct: todayNetPct,
+        });
+      }
+      for (const h of history) {
+        rows.push({
+          date: String(h.date),
+          trades_count: h.trades_count ?? 0,
+          win_rate_pct: h.win_rate_pct,
+          gross_pnl: h.net_profit_before_ai ?? h.gross_pnl,
+          fees_inr: h.fees_inr,
+          net: h.net_profit_before_ai ?? h.realized_pnl,
+          net_return_pct: h.net_return_pct,
+        });
+      }
+
+      if (ledgerDailyCount) ledgerDailyCount.textContent = rows.length;
+      if (dailyTbody) {
+        if (!rows.length) {
+          dailyTbody.innerHTML = '<tr><td colspan="7" class="table-empty">No completed trading days yet.</td></tr>';
+        } else {
+          dailyTbody.innerHTML = rows.map(r => {
+            const net = Number(r.net ?? 0);
+            const cls = net > 0 ? 'val-green' : (net < 0 ? 'val-red' : 'val-muted');
+            const sign = net > 0 ? '+' : '';
+            const pct = r.net_return_pct == null ? '—' : `${Number(r.net_return_pct) >= 0 ? '+' : ''}${Number(r.net_return_pct).toFixed(2)}%`;
+            const fees = r.fees_inr == null ? '—' : `₹ ${Number(r.fees_inr).toFixed(2)}`;
+            const gross = r.gross_pnl == null ? '—' : `₹ ${Number(r.gross_pnl).toFixed(2)}`;
+            const win = r.win_rate_pct == null ? '—' : `${Number(r.win_rate_pct).toFixed(1)}`;
+            return `
+              <tr>
+                <td>${r.date}</td>
+                <td>${r.trades_count}</td>
+                <td>${win}</td>
+                <td>${gross}</td>
+                <td>${fees}</td>
+                <td class="${cls}"><strong>${sign}₹ ${net.toFixed(2)}</strong></td>
+                <td class="${cls}">${pct}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+    } catch (e) {
+      console.error('Error loading daily performance:', e);
+    }
+  }
+
+  // ==========================================================================
+  // 4c. FROZEN-BASELINE PAPER-TRUTH REPORT (Live paper vs walk-forward)
+  // ==========================================================================
+  const TRUTH_VERDICT_META = {
+    on_track: { label: 'ON TRACK', cls: 'val-green' },
+    underperforming: { label: 'UNDERPERFORMING', cls: 'val-red' },
+    insufficient_sample: { label: 'COLLECTING', cls: 'val-muted' },
+  };
+
+  async function loadPaperTruth() {
+    try {
+      const res = await fetch(`/api/performance/paper-truth?account_id=${ACCOUNT_ID}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data) return;
+
+      const verdict = data.verdict || 'insufficient_sample';
+      const meta = TRUTH_VERDICT_META[verdict] || TRUTH_VERDICT_META.insufficient_sample;
+      const realized = data.realized || {};
+      const expected = data.expected || {};
+      const sample = data.sample || {};
+
+      if (truthVerdictTag) {
+        truthVerdictTag.textContent = meta.label;
+        truthVerdictTag.className = `truth-verdict-tag ${meta.cls}`;
+      }
+      if (truthVerdict) {
+        truthVerdict.textContent = meta.label;
+        truthVerdict.className = `truth-verdict ${meta.cls}`;
+      }
+      if (truthReason) {
+        const reasons = data.verdict_reasons || [];
+        truthReason.textContent = verdict === 'insufficient_sample'
+          ? (reasons[0] || 'Collecting closed trades; the verdict waits for a real sample.')
+          : `Checks: ${reasons.join(', ')}`;
+      }
+
+      const closed = Number(sample.closed_trades ?? realized.closed_trades ?? 0);
+      const minTrades = Number(sample.min_closed_trades_for_verdict ?? 30);
+      if (truthTrades) truthTrades.textContent = `${closed} / ${minTrades}`;
+      if (truthWin) truthWin.textContent = `${Number(realized.win_rate_pct ?? 0).toFixed(1)}% / ${Number(expected.win_rate_pct ?? 0).toFixed(1)}%`;
+      if (truthPf) truthPf.textContent = `${Number(realized.profit_factor ?? 0).toFixed(2)} / ${Number(expected.profit_factor ?? 0).toFixed(2)}`;
+
+      if (truthNet) {
+        const net = Number(realized.net_pnl_inr ?? 0);
+        truthNet.className = `truth-cell-value ${net > 0 ? 'val-green' : (net < 0 ? 'val-red' : 'val-muted')}`;
+        truthNet.textContent = `${net >= 0 ? '+' : ''}₹ ${net.toFixed(2)}`;
+      }
+      if (truthFees) truthFees.textContent = `₹ ${Number(realized.fees_inr ?? 0).toFixed(2)}`;
+      if (truthDd) truthDd.textContent = `${Number(realized.max_drawdown_pct ?? 0).toFixed(2)}%`;
+
+      if (truthNote) {
+        const folds = expected.positive_folds || '--';
+        truthNote.innerHTML = `Frozen baseline <strong>${data.baseline_id || '--'}</strong> · walk-forward win ${Number(expected.win_rate_pct ?? 0).toFixed(1)}% · PF ${Number(expected.profit_factor ?? 0).toFixed(2)} · expectancy ${Number(expected.expectancy_pct_per_trade ?? 0).toFixed(2)}%/trade · ${folds} folds positive. The verdict is withheld until ${minTrades} closed trades.`;
+      }
+    } catch (e) {
+      console.error('Error loading paper truth:', e);
     }
   }
 
@@ -672,21 +871,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Ledger Card Tabs (Positions vs History)
-  if (tabBtnPositions && tabBtnHistory) {
-    tabBtnPositions.addEventListener('click', () => {
-      tabBtnPositions.classList.add('active');
-      tabBtnHistory.classList.remove('active');
-      if (tabPositions) tabPositions.style.display = 'block';
-      if (tabHistory) tabHistory.style.display = 'none';
+  // Ledger Card Tabs (Positions vs Trade Ledger vs Daily P&L vs Paper Truth)
+  const ledgerTabs = [
+    { btn: tabBtnPositions, panel: tabPositions },
+    { btn: tabBtnHistory, panel: tabHistory },
+    { btn: tabBtnDaily, panel: tabDaily },
+    { btn: tabBtnTruth, panel: tabTruth },
+  ];
+  ledgerTabs.forEach(({ btn, panel }) => {
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      ledgerTabs.forEach(other => {
+        if (other.btn) other.btn.classList.remove('active');
+        if (other.panel) other.panel.style.display = 'none';
+      });
+      btn.classList.add('active');
+      if (panel) panel.style.display = 'block';
+      if (panel === tabHistory) loadOrdersHistory();
+      if (panel === tabDaily) loadDailyPerformance();
+      if (panel === tabTruth) loadPaperTruth();
     });
-    tabBtnHistory.addEventListener('click', () => {
-      tabBtnHistory.classList.add('active');
-      tabBtnPositions.classList.remove('active');
-      if (tabHistory) tabHistory.style.display = 'block';
-      if (tabPositions) tabPositions.style.display = 'none';
-    });
-  }
+  });
 
   // Pre-Market Scan Button
   if (btnPreMarketScan) {
@@ -828,7 +1033,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadIndices();
     loadSystemHealth();
     if (activeChartSymbol) {
-      loadInstitutionalSignal(activeChartSymbol);
+      loadDeepSeekPrediction(activeChartSymbol);
     }
   }, 10000);
 

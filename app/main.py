@@ -43,6 +43,9 @@ from app.trading.institutional_engine import (
 from app.trading.skills.day_trader_adapter import day_trader
 from app.trading.sentiment_analyzer import sentiment_engine
 from app.trading.institutional_runner import institutional_runner
+from app.trading.swing_live_runner import swing_live_runner
+from app.trading.market_intel import market_intel
+from app.trading.paper_truth import build_truth_report, load_frozen_baseline
 from app.system.metrics import get_system_metrics
 from app.system.tokens import token_tracker
 from app.system.logging_manager import (
@@ -74,22 +77,35 @@ logger = logging.getLogger("app.main")
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start DeepSeek Institutional Runner, autonomous strategy manager, and live market feed."""
+    """Start the validated swing runner, protective loops, and live market feed."""
     db.prune_historical_records()
     state = db.get_account_state()
     auto_exec = bool(state.get("auto_execute", settings.AUTO_EXECUTE_DEFAULT))
     strategy_manager.auto_execute = auto_exec
-    argon_predictor.auto_execute = auto_exec
-    institutional_runner.auto_execute = auto_exec
+    swing_live_runner.auto_execute = auto_exec
+    # The legacy index/intraday engines were measured net-negative after fees.
+    # They stay off unless explicitly re-enabled with fresh walk-forward evidence.
+    legacy = bool(getattr(settings, "ENABLE_LEGACY_INTRADAY_ENGINES", False))
+    argon_predictor.auto_execute = auto_exec and legacy
+    institutional_runner.auto_execute = auto_exec and legacy
 
     market_feed.start_feed()
     institutional_runner.start_background_loop()
     strategy_manager.start_background_loop()
-    logger.info(f"⚡ Started Market Feed, DeepSeek Institutional Runner (NIFTY/BANKNIFTY/SENSEX), and Strategy Manager. Auto-execute: {auto_exec}")
+    if getattr(settings, "SWING_LIVE_ENABLED", True):
+        swing_live_runner.start_background_loop()
+    if getattr(settings, "MARKET_INTEL_ENABLED", True):
+        market_intel.start_background_loop()
+    logger.info(
+        "Started Market Feed, Strategy Manager, and Swing Live Runner. "
+        "Auto-execute: %s (legacy intraday engines: %s)", auto_exec, legacy,
+    )
     yield
     market_feed.stop_feed()
     institutional_runner.stop_background_loop()
     strategy_manager.stop_background_loop()
+    swing_live_runner.stop_background_loop()
+    market_intel.stop_background_loop()
     logger.info("Stopped background services.")
 
 app = FastAPI(
@@ -133,6 +149,7 @@ class FastOrderRequest(BaseModel):
     stop_loss: Optional[float] = None
     target_price: Optional[float] = None
     hold_to_close: Optional[bool] = False
+    delivery_hold: Optional[bool] = False
 
 class ClosePositionRequest(BaseModel):
     symbol: str
@@ -187,6 +204,9 @@ async def health_check():
         "predictor_active": argon_predictor.is_running,
         "strategy_manager_active": strategy_manager.is_running,
         "market_feed_active": market_feed.is_running,
+        "swing_live_runner_active": swing_live_runner.is_running,
+        "market_intel_active": market_intel.is_running,
+        "legacy_intraday_engines_enabled": bool(getattr(settings, "ENABLE_LEGACY_INTRADAY_ENGINES", False)),
         "auto_execute": strategy_manager.auto_execute,
         "trading_mode": getattr(settings, "TRADING_MODE", "paper"),
         "system": metrics,
@@ -330,6 +350,7 @@ async def place_order(req: FastOrderRequest, auth_user: Dict[str, Any] = Depends
         stop_loss=req.stop_loss,
         target_price=req.target_price,
         hold_to_close=bool(req.hold_to_close),
+        delivery_hold=bool(req.delivery_hold),
     )
     return res
 
@@ -454,14 +475,21 @@ async def toggle_auto_execution(
     account_id: Optional[str] = Query(None),
     auth_user: Dict[str, Any] = Depends(require_auth),
 ):
-    """Enable or disable automatic execution for institutional trading."""
+    """Enable or disable automatic execution of the validated swing edge.
+
+    The legacy index/intraday engines remain off unless ENABLE_LEGACY_INTRADAY_ENGINES
+    is set, so toggling auto-execute on runs only the walk-forward validated
+    multi-day swing strategy.
+    """
     strategy_manager.set_auto_execute(enabled, account_id=account_id)
-    argon_predictor.auto_execute = enabled
-    institutional_runner.auto_execute = enabled
-    db.save_account_state(account_id or DEFAULT_ACCOUNT_ID, auto_execute=enabled)
+    swing_live_runner.auto_execute = enabled
+    legacy = bool(getattr(settings, "ENABLE_LEGACY_INTRADAY_ENGINES", False))
+    argon_predictor.auto_execute = enabled and legacy
+    institutional_runner.auto_execute = enabled and legacy
     return {
         "auto_execute": enabled,
         "account_id": account_id or "all_accounts",
+        "legacy_intraday_engines_enabled": legacy,
         "market_status": strategy_manager.get_market_status(),
     }
 
@@ -537,8 +565,94 @@ async def get_daily_performance(
     limit: int = Query(30),
     auth_user: Dict[str, Any] = Depends(require_auth),
 ):
-    """Get daily performance history with gross, fees, AI cost, and net."""
-    return {"daily_history": db.get_daily_performance(account_id=account_id, limit=limit)}
+    """Get daily performance history with gross, fees, AI cost, and net.
+
+    Stored EOD snapshots are authoritative for the days they cover. Any day that
+    has closed trades but no snapshot (a fresh session before the 15:20 IST
+    square-off, or a day whose snapshot was never written) is reconstructed by
+    aggregating the trades table so the per-day view is never empty while real
+    P&L exists.
+    """
+    snapshots = db.get_daily_performance(account_id=account_id, limit=limit)
+    scope = account_id or DEFAULT_ACCOUNT_ID
+    snap_dates = {str(s.get("date")) for s in snapshots}
+    merged = list(snapshots)
+    for day in db.get_daily_trade_pnl(scope, limit=limit):
+        if day["date"] in snap_dates:
+            continue
+        net = day["net_pnl"]
+        base = settings.INITIAL_CAPITAL_INR or 1.0
+        merged.append({
+            "date": day["date"],
+            "account_id": scope,
+            "realized_pnl": net,
+            "gross_pnl": day["gross_pnl"],
+            "fees_inr": day["fees_inr"],
+            "trades_count": day["trades_count"],
+            "win_rate_pct": day["win_rate_pct"],
+            "net_profit_before_ai": net,
+            "net_profit_after_ai_cost": net,
+            "net_return_pct": round((net / base) * 100, 2),
+            "source": "trades",
+        })
+    merged.sort(key=lambda r: str(r.get("date")), reverse=True)
+    return {"daily_history": merged[:limit]}
+
+
+@app.get("/api/performance/paper-truth")
+async def get_paper_truth(
+    account_id: str = Query(DEFAULT_ACCOUNT_ID),
+    auth_user: Dict[str, Any] = Depends(require_auth),
+):
+    """Frozen-baseline paper-trading truth report for an account.
+
+    Compares realized closed-trade statistics against the frozen walk-forward
+    expectation and returns an on_track/underperforming/insufficient_sample
+    verdict. Read-only; it never places a trade.
+    """
+    try:
+        baseline = load_frozen_baseline()
+    except FileNotFoundError:
+        baseline = None
+    return build_truth_report(db, account_id, baseline=baseline)
+
+
+# -------------------------------------------------------------
+# MARKET INTELLIGENCE AGENT (scored, analysis-only forecasts)
+# -------------------------------------------------------------
+@app.get("/api/analysis/market-intel")
+async def get_market_intel_report(
+    limit: int = Query(200),
+    auth_user: Dict[str, Any] = Depends(require_auth),
+):
+    """Scored multi-day directional forecast report.
+
+    Every forecast is persisted with its reference price and horizon, then
+    resolved against the price that actually printed. Returns an
+    insufficient_sample/on_track/underperforming verdict. Analysis only: this
+    endpoint never places a trade.
+    """
+    safe_limit = min(max(1, limit), 1000)
+    report = market_intel.build_report(limit=safe_limit)
+    report["active"] = market_intel.is_running
+    report["enabled"] = bool(getattr(settings, "MARKET_INTEL_ENABLED", True))
+    report["stats"] = dict(market_intel.stats)
+    return report
+
+@app.post("/api/analysis/market-intel/run")
+async def run_market_intel(
+    force: bool = Query(False),
+    resolve: bool = Query(True),
+    auth_user: Dict[str, Any] = Depends(require_auth),
+):
+    """Run one market-intelligence cycle on demand (never trades).
+
+    ``resolve`` first scores any open forecasts whose horizon has a completed
+    bar; ``force`` bypasses the once-per-day idempotency guard.
+    """
+    resolved = await market_intel.resolve_due_forecasts() if resolve else {"status": "skipped"}
+    cycle = await market_intel.run_cycle(force=force)
+    return {"resolution": resolved, "cycle": cycle}
 
 @app.get("/api/tokens/summary")
 async def get_token_accounting(

@@ -130,8 +130,11 @@ class InstitutionalRunner:
         if market_open:
             # Check 15:20 IST End of Day square-off
             if near_close and acc.positions:
-                logger.info("15:20 IST window reached; flattening all positions.")
+                logger.info("15:20 IST window reached; flattening all intraday positions.")
                 for sym in list(acc.positions.keys()):
+                    pos = acc.positions.get(sym)
+                    if pos is not None and getattr(pos, "delivery_hold", False):
+                        continue
                     await execution_engine.close_position(sym, account_id=account_id, reason="eod_square_off")
 
             # Check individual Stop Loss / Target for open positions

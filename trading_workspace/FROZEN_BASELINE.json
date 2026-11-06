@@ -1,0 +1,69 @@
+{
+  "baseline_id": "rsi2_swing_v1",
+  "frozen_on": "2026-11-06",
+  "policy": "DO NOT TUNE. Freeze the strategy parameters and gates. Any change invalidates the paper track record and must be recorded as a new baseline_id.",
+  "primary_strategy": {
+    "name": "RSI2OversoldSwing",
+    "module": "app/trading/swing_strategies.py",
+    "timeframe": "1d",
+    "entry": "rsi_2 < rsi2_max AND close > close_prev (bullish turn)",
+    "exit": "stop = entry - stop_atr_mult * atr_14 ; target = entry + target_atr_mult * atr_14 ; max_hold_days cap",
+    "params": {
+      "rsi2_max": 10.0,
+      "stop_atr_mult": 2.0,
+      "target_atr_mult": 3.0,
+      "max_hold_days": 60
+    },
+    "instrument_type": "DELIVERY_EQUITY",
+    "notes": "Positive net expectancy after full delivery costs in ALL FOUR 5-year walk-forward folds (iteration 114, config R0_rsi2_10|sl2_tp3)."
+  },
+  "secondary_strategy": {
+    "name": "NR7SwingBreakout",
+    "module": "app/trading/swing_strategies.py",
+    "timeframe": "1d",
+    "params": {
+      "vol_contraction": 0.75,
+      "stop_atr_mult": 1.5,
+      "target_atr_mult": 3.5,
+      "max_hold_days": 30
+    },
+    "instrument_type": "DELIVERY_EQUITY",
+    "notes": "NOT independently walk-forward validated. Included only as a portfolio diversifier; do not promote on its own without a dedicated fold test."
+  },
+  "sizing_and_gates": {
+    "capital_inr": 10000.0,
+    "risk_per_trade_pct": 0.75,
+    "max_concurrent_swing_positions": 2,
+    "min_edge_to_fee_ratio": 2.2,
+    "max_fee_to_risk_pct": 18.0,
+    "intraday_leverage_mult": 1.0,
+    "directive": "Multi-day delivery holds only. No intraday MIS. Fixed rupee risk per trade."
+  },
+  "expectation": {
+    "source": "trading_workspace/iteration114_rsi2_swing.json (config R0_rsi2_10|sl2_tp3)",
+    "folds": [
+      {"fold": 1, "trades": 61, "expectancy_pct_per_trade": 0.782, "win_rate_pct": 49.2, "profit_factor": 1.32, "net_inr": 47.7},
+      {"fold": 2, "trades": 157, "expectancy_pct_per_trade": 1.357, "win_rate_pct": 56.1, "profit_factor": 1.67, "net_inr": 213.1},
+      {"fold": 3, "trades": 155, "expectancy_pct_per_trade": 0.234, "win_rate_pct": 47.1, "profit_factor": 1.08, "net_inr": 36.3},
+      {"fold": 4, "trades": 168, "expectancy_pct_per_trade": 0.316, "win_rate_pct": 47.6, "profit_factor": 1.13, "net_inr": 53.1}
+    ],
+    "aggregate": {
+      "trades": 541,
+      "expectancy_pct_per_trade": 0.647,
+      "win_rate_pct": 50.1,
+      "profit_factor": 1.30,
+      "positive_folds": 4,
+      "total_folds": 4
+    },
+    "acceptance_bands": {
+      "min_closed_trades_for_verdict": 30,
+      "win_rate_tolerance_pct": 0.90,
+      "profit_factor_tolerance": 0.90,
+      "note": "Realized is 'on_track' when closed_trades >= min, net > 0, win_rate >= 0.90*expected, and profit_factor >= 0.90*expected."
+    }
+  },
+  "known_failures": {
+    "intraday": "All intraday arms (1h and 5m) are net-negative after statutory fees in walk-forward (iteration 115). Do NOT trade intraday with this capital.",
+    "deepseek_veto": "No measurable value as a binary gate (iteration 116): 15 calls changed zero trades. Use AI for ranking/analysis only."
+  }
+}

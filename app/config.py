@@ -61,11 +61,46 @@ class Settings(BaseSettings):
     PAPER_SLIPPAGE_BPS: float = float(os.getenv("PAPER_SLIPPAGE_BPS", "5.0"))
     SQUARE_OFF_TIME_IST: str = os.getenv("SQUARE_OFF_TIME_IST", "15:20")
 
+    # Live paper-trading of the walk-forward validated multi-day swing edge.
+    # The frozen baseline (trading_workspace/FROZEN_BASELINE.json) owns the
+    # strategy parameters and sizing; these settings only control scheduling
+    # and universe. No intraday system is enabled by this flag.
+    SWING_LIVE_ENABLED: bool = os.getenv("SWING_LIVE_ENABLED", "true").lower() in ("true", "1", "yes")
+
+    # The legacy index/intraday engines (institutional_runner + AI predictor)
+    # were measured net-negative after statutory fees (iteration 115/116). They
+    # are disabled by default so that enabling auto-execute runs ONLY the
+    # validated swing edge. Set true only with new walk-forward evidence.
+    ENABLE_LEGACY_INTRADAY_ENGINES: bool = os.getenv(
+        "ENABLE_LEGACY_INTRADAY_ENGINES", "false"
+    ).lower() in ("true", "1", "yes")
+
+    # Market intelligence agent: a daily, SCORED directional forecast over a
+    # multi-day horizon. It is analysis-only and never places a trade. Each
+    # forecast is persisted with its reference price and horizon, then resolved
+    # and scored against the realized close so the system can measure whether
+    # the analysis has any real skill (rather than assuming it does).
+    MARKET_INTEL_ENABLED: bool = os.getenv("MARKET_INTEL_ENABLED", "true").lower() in ("true", "1", "yes")
+    MARKET_INTEL_MAX_SYMBOLS: int = int(os.getenv("MARKET_INTEL_MAX_SYMBOLS", "40"))
+    MARKET_INTEL_HORIZON_DAYS: int = int(os.getenv("MARKET_INTEL_HORIZON_DAYS", "5"))
+    MARKET_INTEL_FLAT_BAND_PCT: float = float(os.getenv("MARKET_INTEL_FLAT_BAND_PCT", "1.0"))
+    MARKET_INTEL_MIN_CLOSED_FOR_VERDICT: int = int(os.getenv("MARKET_INTEL_MIN_CLOSED_FOR_VERDICT", "30"))
+    MARKET_INTEL_MAX_AI_CALLS: int = int(os.getenv("MARKET_INTEL_MAX_AI_CALLS", "40"))
+    MARKET_INTEL_NEWS_MAX_RESULTS: int = int(os.getenv("MARKET_INTEL_NEWS_MAX_RESULTS", "3"))
+    MARKET_INTEL_NOTIONAL_INR: float = float(os.getenv("MARKET_INTEL_NOTIONAL_INR", "5000.0"))
+    MARKET_INTEL_RUN_HOUR_IST: int = int(os.getenv("MARKET_INTEL_RUN_HOUR_IST", "16"))
+
+    # NSE MIS intraday leverage. 1.0 = legacy cash-funded cap (MAX_POSITION_PCT);
+    # 2.5-5.0 draws realistic intraday margin while rupee risk stays pinned to
+    # RISK_PER_TRADE_PCT via risk-based sizing. Overnight swing uses delivery
+    # sizing (no leverage) and is therefore unaffected.
+    INTRADAY_LEVERAGE_MULT: float = float(os.getenv("INTRADAY_LEVERAGE_MULT", "1.0"))
+
     # Fee-aware entry filter. A candidate is only tradable when its expected
     # gross move to target covers the round-trip transaction cost by at least
     # this multiple. 1.0 disables the filter (any edge that merely breaks even
     # after fees is allowed). Higher values demand a larger edge over costs.
-    MIN_EDGE_TO_FEE_RATIO: float = float(os.getenv("MIN_EDGE_TO_FEE_RATIO", "1.0"))
+    MIN_EDGE_TO_FEE_RATIO: float = float(os.getenv("MIN_EDGE_TO_FEE_RATIO", "2.2"))
 
     # Fee-to-risk ceiling. Reject a candidate when round-trip transaction cost
     # exceeds this percentage of the rupee risk budget (entry-stop)*qty. Small
@@ -73,7 +108,7 @@ class Settings(BaseSettings):
     # sinks. 100.0 disables the filter. Default 25 was walk-forward validated on
     # 1y/1h data: it improved net P&L and profit factor in both halves of the
     # sample by dropping fee-sink trades (e.g. low-priced ETFs).
-    MAX_FEE_TO_RISK_PCT: float = float(os.getenv("MAX_FEE_TO_RISK_PCT", "25.0"))
+    MAX_FEE_TO_RISK_PCT: float = float(os.getenv("MAX_FEE_TO_RISK_PCT", "18.0"))
 
     # Security & Dashboard Login Authentication
     AUTH_ENABLED: bool = os.getenv("AUTH_ENABLED", "true").lower() in ("true", "1", "yes")

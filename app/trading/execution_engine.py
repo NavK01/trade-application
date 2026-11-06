@@ -55,6 +55,7 @@ class ExecutionEngine:
         target_price: Optional[float] = None,
         exit_reason: Optional[str] = None,
         hold_to_close: bool = False,
+        delivery_hold: bool = False,
     ) -> Dict[str, Any]:
         return await broker.fast_execute_order(
             symbol=symbol,
@@ -68,6 +69,7 @@ class ExecutionEngine:
             target_price=target_price,
             exit_reason=exit_reason,
             hold_to_close=hold_to_close,
+            delivery_hold=delivery_hold,
         )
 
     async def close_position(

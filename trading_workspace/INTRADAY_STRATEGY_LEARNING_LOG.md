@@ -3219,3 +3219,101 @@ fired on this window, so the AI did not change the trade set — it confirmed it
 * **Phase 2 (1M OOS DeepSeek):** 17 trades | Win%: 29.4% | Net P&L: ₹-77.08 | PF: 0.49 | Max DD: 27.42%
 * **Token Usage Status:** Gemini In: 314,319 / 10M | Gemini Out: 37,273 / 3M | DeepSeek: 2,665,040 / 10M
 * **Mutated Parameters:** Target: 1.2% | Sweep Vol Mult: 2.0x | Breakeven Trigger: 1.0R | SL: 0.45%
+
+---
+
+## Iteration 109: Fee-Aware Strategies Implemented (2026-11-05)
+
+* **Code added:** `app/trading/fee_aware_strategies.py` (`FeeAwareOpeningPullback`, `LiquiditySweepLong`),
+  percentage stop/target geometry, and a profit-lock **ratchet** plus a corrected prior-day
+  mapping (no look-ahead) in `app/trading/backtester.py`. Tests: `tests/test_fee_aware_strategies.py` (22 pass).
+* **On the 8-symbol `LIQUID_NSE_EQUITIES` universe (REAL backtester, fees charged):**
+  * A. 1y/1h opening EMA-20 pullback (no AI): 10 trades | Win 80.0% | Net ₹+255.79 | PF 4.7 | DD 0.35%
+  * B. 1mo/5m prior-day-low sweep (no AI): 10 trades | Win 90.0% | Net ₹+166.22 | PF 3.93 | DD 0.57%
+  * C. 1mo/5m sweep + DeepSeek veto: identical (vetoes downgraded, no hard invalidation)
+* **Saved:** `trading_workspace/iteration109_results.json`
+
+---
+
+## Iteration 110: Generalization Test — Edge Does NOT Survive (2026-11-05)
+
+* **Method:** same code, broad 30-symbol NSE large-cap universe (adds RELIANCE, TCS, HDFCBANK,
+  LT, BAJFINANCE, SUNPHARMA, JSWSTEEL, ...). This is the decisive overfitting check.
+* **Result A (1y/1h opening pullback, 30 syms):** 27 trades | Win **44.4%** | Gross ₹-32.10 | Fees ₹199.98 | **Net ₹-232.08** | PF 0.60
+* **Result B (1mo/5m PDL sweep, 30 syms):** 23 trades | Win **56.5%** | Gross ₹-37.46 | Fees ₹205.64 | **Net ₹-243.10** | PF 0.58
+* **Conclusion:** the 80-90% win rates at iteration 109 were **selection artefacts** of the 8-symbol
+  universe. On a broader, non-cherry-picked universe both setups revert to ~44-57% and are net
+  negative after fees. The entry signal is not a durable edge.
+* **Root cause (again):** fees ≈ ₹200-206 over the sample exceed gross edge (which is ~0). No
+  indicator-tuned entry on 1h/5m 8-symbol data has survived honest out-of-sample expansion.
+* **Saved:** `trading_workspace/iteration110_results.json`
+
+---
+
+## Iteration 111: Expectancy Grid, Broad 1y/1h (2026-11-05)
+
+* **Pivot:** per user direction, stopped chasing win rate and searched for **positive net expectancy**
+  (mean net return per trade after fees) with a train/test split (60/40).
+* **Grid:** 7 entry families (momentum breakout, VWAP bounce, opening pullback, RSI reversion,
+  EMA pullback, PDL sweep, PDH breakout) x 5 exits (fee-clearing targets, hold-to-EOD runners,
+  trailing) on the broad 30-symbol universe.
+* **Result:** every high-frequency family is a fee sink (expectancy -0.08% to -0.19%/trade in
+  BOTH halves). The ONLY config positive in both halves was the opening EMA-20 pullback with a
+  **hold-to-EOD runner** (sl 1.0%, ratchet +0.8%->+0.2% / +1.6%->+0.8%):
+  train n=20 exp +0.116% PF 1.31; test n=12 exp +0.315% PF 1.99.
+* **Saved:** `trading_workspace/iteration111_expectancy_grid.json`
+
+---
+
+## Iteration 112: 2-Year 3-Fold Validation — Lead Does NOT Hold (2026-11-05)
+
+* **Method:** 30 symbols, 2 years of 1h bars, three sequential folds (~165 days each).
+  Opening-pullback entry variants x runner exits.
+* **Result (C0_base, H_sl1.0_r):** F1 n=26 exp **-0.114%** | F2 n=8 exp **-0.433%** | F3 n=28 exp **+0.282%**.
+* **Result (C2_noslope, H_sl1.2_nr):** F1 n=43 exp -0.001% | F2 n=10 exp -0.507% | F3 n=34 exp +0.214%.
+* **No variant is positive in all three folds.** The iteration-111 "consistent" result was a
+  favourable-regime artefact of the single 1-year window (F3 = Mar-Nov 2026).
+* **Conclusion:** the opening-pullback/runner edge is **regime-dependent, not durable**. Combined
+  with iterations 110-111, no entry+exit combination tested on 1h/5m NSE equity has positive
+  expectancy that survives walk-forward across regimes after statutory fees (~0.106% round trip)
+  and 5 bps/side slippage.
+* **Saved:** `trading_workspace/iteration112_pullback_2y.json`
+
+* **Loop status:** HARD BLOCKER. The core premise (a durable intraday equity edge on ₹10k after
+  Indian transaction costs) is not supported by any tested setup. More indicator tuning would be
+  overfitting. Options: (a) pivot timeframe (swing/multi-day) or instrument (F&O/options);
+  (b) accept the project is not viable for retail intraday equity at this cost structure.
+
+---
+
+## Iteration 115: Walk-Forward Profitability Suite (2026-11-05T18:54:27.418017+00:00)
+
+* **Arm 1 (1Y/1h broad, long+short+RS, Zero AI):** 175 trades | win 41.1% | net ₹-2362.76 | PF 0.45 | DD 23.67%
+* **Arm 1b (1mo/5m broad, long+short, Zero AI):** 52 trades | win 55.8% | net ₹-384.78 | PF 0.71 | DD 6.61%
+* **Arm 2 (1mo/5m + DeepSeek veto):** 52 trades | win 55.8% | net ₹-384.78 | PF 0.71 | DD 6.61%
+* **Arm 3 (5Y daily swing portfolio, 4 folds):** 3/4 folds net-positive, avg PF 1.18
+* **Gates:** {"gate1_folds_positive": true, "gate1_detail": "3/4 swing folds net-positive (need >= 3)", "gate2_profit_factor": false, "gate2_detail": "avg swing PF 1.18 (need >= 1.35)", "gate2_drawdown": false, "gate2_drawdown_detail": "max swing fold DD 23.06% (need <= 8.0%)"}
+
+---
+
+## Iteration 116: 1-Month Real-Data DeepSeek Veto Evaluation
+
+* **Method:** Real NSE 5m bars, 30-symbol Nifty universe, 22 trading days (2026-10-06 → 2026-11-05).
+  Same execution/ fee / sizing path as live. Two arms: zero-AI baseline vs. DeepSeek V4.1 Flash
+  veto-only risk filter (max 15 calls). Saved: `trading_workspace/deepseek_1mo_eval.json`.
+* **Baseline (zero AI):** 52 trades | win 55.8% | gross **+₹112.77** | fees ₹497.55 | net **−₹384.78** | PF 0.71 | maxDD 6.61%.
+* **DeepSeek veto:** 52 trades | win 55.8% | gross +₹112.77 | fees ₹497.55 | AI ₹0.16 | net **−₹384.94** | PF 0.71 | maxDD 6.61%.
+* **Delta:** `−₹0.16` — the AI made **15 real calls** but changed **zero** trades. Every PASS was either
+  already EXECUTE or downgraded by the deterministic `hard_invalidation` guard. The veto is
+  **cost-efficient (0.14% of gross) but value-neutral** on this window.
+* **Per-strategy net (identical in both arms):**
+  * Prior-Day-High Liquidity Sweep (**short**): 13 trades | win 69.2% | **+₹73.17**
+  * Prior-Day-Low Liquidity Sweep (long): 19 trades | win 63.2% | −₹123.18
+  * Relative-Strength + RVOL Leader Breakout: 20 trades | win 40.0% | **−₹334.77**
+* **Per-day:** 20 trading days, 12 net-positive / 8 net-negative. Worst day 2026-10-30 (−₹268.05,
+  0/4 win); best day 2026-10-29 (+₹115.21, 3/3). The RS-leader breakout is the primary loss source.
+* **Conclusion:** On real 1-month data the deterministic 5m intraday edge has a *positive gross*
+  (+₹113) that fees (₹498) turn into a −₹385 net — confirming the friction-vs-move-size thesis.
+  The short liquidity-sweep is the only net-positive sleeve and is the best candidate for a
+  fee-hurdle/regime-gated live subset. DeepSeek adds no measurable value in veto-only mode;
+  it should be reserved for candidate *ranking* or news-invalidation, not binary gating.

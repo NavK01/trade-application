@@ -62,7 +62,7 @@
       </div>
 
       <div class="pnl-metric-card realized-card">
-        <span class="pnl-label">TODAY'S NET REALIZED P&L</span>
+        <span class="pnl-label">NET REALIZED P&L (ALL-TIME)</span>
         <strong id="pnl-net-realized-val" class="pnl-val val-green">₹ 0.00 (+0.0%)</strong>
         <span class="pnl-sub">After all Indian statutory taxes & fees</span>
       </div>
@@ -268,6 +268,12 @@
             <button class="ledger-tab-btn" id="tab-btn-history" data-tab="tab-history">
               📜 Trade Ledger (<span id="ledger-orders-count">0</span>)
             </button>
+            <button class="ledger-tab-btn" id="tab-btn-daily" data-tab="tab-daily">
+              📅 Daily P&L (<span id="ledger-daily-count">0</span>)
+            </button>
+            <button class="ledger-tab-btn" id="tab-btn-truth" data-tab="tab-truth">
+              🎯 Paper Truth (<span id="truth-verdict-tag">--</span>)
+            </button>
           </div>
 
           <!-- Open Positions View -->
@@ -291,7 +297,7 @@
             </div>
           </div>
 
-          <!-- Recent Executed Orders View -->
+          <!-- Recent Executed Orders View (Per-Trade Net P&L) -->
           <div class="ledger-content" id="tab-history" style="display: none;">
             <div class="table-scroll-wrap">
               <table class="ledger-table" id="orders-table">
@@ -300,16 +306,56 @@
                     <th>Time</th>
                     <th>Asset</th>
                     <th>Action</th>
+                    <th>Qty</th>
                     <th>Price</th>
                     <th>Fees</th>
                     <th>Net P&L</th>
                   </tr>
                 </thead>
                 <tbody id="orders-tbody">
-                  <tr><td colspan="6" class="table-empty">No orders executed yet today.</td></tr>
+                  <tr><td colspan="7" class="table-empty">No orders executed yet today.</td></tr>
                 </tbody>
               </table>
             </div>
+          </div>
+
+          <!-- Daily P&L Summary View (Per-Day Net Profit) -->
+          <div class="ledger-content" id="tab-daily" style="display: none;">
+            <div class="table-scroll-wrap">
+              <table class="ledger-table" id="daily-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Trades</th>
+                    <th>Win %</th>
+                    <th>Gross (₹)</th>
+                    <th>Fees (₹)</th>
+                    <th>Net P&L (₹)</th>
+                    <th>Net %</th>
+                  </tr>
+                </thead>
+                <tbody id="daily-tbody">
+                  <tr><td colspan="7" class="table-empty">No completed trading days yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Frozen-Baseline Paper-Truth View (Live paper vs walk-forward expectation) -->
+          <div class="ledger-content" id="tab-truth" style="display: none;">
+            <div class="truth-summary-bar">
+              <span class="truth-verdict" id="truth-verdict">--</span>
+              <span class="truth-reason" id="truth-reason">Collecting closed trades; the verdict waits for a real sample.</span>
+            </div>
+            <div class="truth-grid">
+              <div class="truth-cell"><span class="truth-lbl">Closed Trades</span><strong id="truth-trades">0 / 30</strong></div>
+              <div class="truth-cell"><span class="truth-lbl">Win % (real / expected)</span><strong id="truth-win">0 / 0</strong></div>
+              <div class="truth-cell"><span class="truth-lbl">Profit Factor (real / expected)</span><strong id="truth-pf">0 / 0</strong></div>
+              <div class="truth-cell"><span class="truth-lbl">Net P&L</span><strong id="truth-net">₹ 0.00</strong></div>
+              <div class="truth-cell"><span class="truth-lbl">Fees Paid</span><strong id="truth-fees">₹ 0.00</strong></div>
+              <div class="truth-cell"><span class="truth-lbl">Max Drawdown</span><strong id="truth-dd">0.0%</strong></div>
+            </div>
+            <div class="truth-note" id="truth-note"></div>
           </div>
         </div>
 

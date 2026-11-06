@@ -1,0 +1,132 @@
+{
+  "timestamp_utc": "2026-11-05T18:54:27.418017+00:00",
+  "capital_inr": 10000.0,
+  "gates": {
+    "min_folds_positive": 3,
+    "min_profit_factor": 1.35,
+    "max_drawdown_pct": 8.0
+  },
+  "arm1_intraday_1y_1h_zero_ai": {
+    "tag": "arm1_intraday_1y_1h",
+    "total_trades": 175,
+    "win_rate_pct": 41.1,
+    "gross_pnl_inr": -937.64,
+    "fees_inr": 1425.12,
+    "net_pnl_inr": -2362.76,
+    "profit_factor": 0.45,
+    "max_drawdown_pct": 23.67,
+    "interval": "1h",
+    "intraday_leverage_mult": 1.0
+  },
+  "arm1b_intraday_1mo_5m_zero_ai": {
+    "tag": "arm1b_intraday_1mo_5m",
+    "total_trades": 52,
+    "win_rate_pct": 55.8,
+    "gross_pnl_inr": 112.77,
+    "fees_inr": 497.55,
+    "net_pnl_inr": -384.78,
+    "profit_factor": 0.71,
+    "max_drawdown_pct": 6.61,
+    "interval": "5m",
+    "intraday_leverage_mult": 1.0
+  },
+  "arm2_intraday_1mo_5m_deepseek": {
+    "tag": "arm2_intraday_1mo_5m_deepseek",
+    "total_trades": 52,
+    "win_rate_pct": 55.8,
+    "gross_pnl_inr": 112.77,
+    "fees_inr": 497.55,
+    "net_pnl_inr": -384.78,
+    "profit_factor": 0.71,
+    "max_drawdown_pct": 6.61,
+    "interval": "5m",
+    "intraday_leverage_mult": 1.0
+  },
+  "arm3_swing_portfolio_5y": {
+    "folds": [
+      {
+        "fold": 1,
+        "start": "2021-11-08",
+        "end": "2023-02-01",
+        "symbols": 30,
+        "total_trades": 36,
+        "win_rate_pct": 30.6,
+        "net_pnl_inr": 816.65,
+        "net_return_pct": 8.17,
+        "profit_factor": 1.18,
+        "max_drawdown_pct": 10.68,
+        "fees_inr": 1023.1
+      },
+      {
+        "fold": 2,
+        "start": "2023-02-02",
+        "end": "2024-05-09",
+        "symbols": 30,
+        "total_trades": 29,
+        "win_rate_pct": 51.7,
+        "net_pnl_inr": 1831.91,
+        "net_return_pct": 18.32,
+        "profit_factor": 1.68,
+        "max_drawdown_pct": 9.39,
+        "fees_inr": 767.58
+      },
+      {
+        "fold": 3,
+        "start": "2024-05-10",
+        "end": "2025-08-05",
+        "symbols": 30,
+        "total_trades": 22,
+        "win_rate_pct": 36.4,
+        "net_pnl_inr": -936.77,
+        "net_return_pct": -9.37,
+        "profit_factor": 0.72,
+        "max_drawdown_pct": 23.06,
+        "fees_inr": 598.16
+      },
+      {
+        "fold": 4,
+        "start": "2025-08-06",
+        "end": "2026-11-05",
+        "symbols": 30,
+        "total_trades": 28,
+        "win_rate_pct": 35.7,
+        "net_pnl_inr": 504.66,
+        "net_return_pct": 5.05,
+        "profit_factor": 1.14,
+        "max_drawdown_pct": 14.47,
+        "fees_inr": 765.63
+      }
+    ],
+    "positive_folds": 3,
+    "total_folds": 4,
+    "avg_profit_factor": 1.18
+  },
+  "arm3_swing_portfolio_1y": {
+    "folds": [
+      {
+        "fold": 1,
+        "start": "2021-11-08",
+        "end": "2026-11-05",
+        "symbols": 30,
+        "total_trades": 169,
+        "win_rate_pct": 32.0,
+        "net_pnl_inr": 657.28,
+        "net_return_pct": 6.57,
+        "profit_factor": 1.04,
+        "max_drawdown_pct": 21.73,
+        "fees_inr": 4633.54
+      }
+    ],
+    "positive_folds": 1,
+    "total_folds": 1,
+    "avg_profit_factor": 1.04
+  },
+  "promotion_gates": {
+    "gate1_folds_positive": true,
+    "gate1_detail": "3/4 swing folds net-positive (need >= 3)",
+    "gate2_profit_factor": false,
+    "gate2_detail": "avg swing PF 1.18 (need >= 1.35)",
+    "gate2_drawdown": false,
+    "gate2_drawdown_detail": "max swing fold DD 23.06% (need <= 8.0%)"
+  }
+}

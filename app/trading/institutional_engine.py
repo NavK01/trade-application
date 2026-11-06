@@ -31,6 +31,9 @@ INDIAN_STATUTORY_RATES = {
     "BROKERAGE_MAX_PER_ORDER": 20.0,       # ₹20 flat or 0.03%
     "BROKERAGE_PERCENT": 0.0003,            # 0.03%
     "STT_EQUITY_INTRADAY_SELL": 0.00025,    # 0.025% on sell turnover
+    "STT_EQUITY_DELIVERY_BOTH": 0.001,     # 0.1% on BOTH buy and sell (delivery)
+    "DP_CHARGE_PER_SELL": 13.5,            # depository participant charge per sell scrip
+    "STAMP_DUTY_DELIVERY_BUY": 0.00015,    # 0.015% on buy leg (delivery)
     "STT_OPTIONS_SELL": 0.000125,           # 0.0125% on sell option premium turnover
     "STT_FUTURES_SELL": 0.0002,             # 0.02% on sell futures turnover
     "EXCHANGE_NSE_TXN": 0.0000297,          # 0.00297% NSE cash/futures
@@ -124,6 +127,7 @@ def calculate_indian_statutory_charges(
             "gst": 0.0,
             "sebi_charges": 0.0,
             "stamp_duty": 0.0,
+            "dp_charges": 0.0,
             "slippage": 0.0,
         }
 
@@ -136,10 +140,15 @@ def calculate_indian_statutory_charges(
     total_brokerage = round(buy_brokerage + sell_brokerage, 2)
 
     # 2. STT (Securities Transaction Tax)
+    dp_charge = 0.0
     if instrument_type == "OPTIONS":
         stt = round(sell_value * cfg["STT_OPTIONS_SELL"], 2)
     elif instrument_type == "FUTURES":
         stt = round(sell_value * cfg["STF_FUTURES_SELL" if "STF_FUTURES_SELL" in cfg else "STT_FUTURES_SELL"], 2)
+    elif instrument_type == "DELIVERY_EQUITY":
+        # Delivery attracts STT on BOTH legs plus DP charges on the sell leg.
+        stt = round((buy_value + sell_value) * cfg["STT_EQUITY_DELIVERY_BOTH"], 2)
+        dp_charge = round(cfg["DP_CHARGE_PER_SELL"], 2)
     else:  # INTRADAY_EQUITY
         stt = round(sell_value * cfg["STT_EQUITY_INTRADAY_SELL"], 2)
 
@@ -154,13 +163,14 @@ def calculate_indian_statutory_charges(
     sebi_charges = round(turnover * cfg["SEBI_TURNOVER_RATE"], 2)
 
     # 6. Stamp Duty (on buy leg only)
-    stamp_duty = round(buy_value * cfg["STAMP_DUTY_BUY"], 2)
+    stamp_rate = cfg["STAMP_DUTY_DELIVERY_BUY"] if instrument_type == "DELIVERY_EQUITY" else cfg["STAMP_DUTY_BUY"]
+    stamp_duty = round(buy_value * stamp_rate, 2)
 
     # 7. Slippage
     slip_rate = cfg["DEFAULT_SLIPPAGE_PCT"] if slippage_pct is None else slippage_pct
     slippage = round(turnover * slip_rate, 2)
 
-    total_charges = round(total_brokerage + stt + exchange_txn_fee + gst + sebi_charges + stamp_duty + slippage, 2)
+    total_charges = round(total_brokerage + stt + exchange_txn_fee + gst + sebi_charges + stamp_duty + slippage + dp_charge, 2)
     gross_pnl = round(sell_value - buy_value, 2)
     net_pnl = round(gross_pnl - total_charges, 2)
     net_roi_pct = round((net_pnl / buy_value) * 100, 3) if buy_value > 0 else 0.0
@@ -178,6 +188,7 @@ def calculate_indian_statutory_charges(
         "gst": gst,
         "sebi_charges": sebi_charges,
         "stamp_duty": stamp_duty,
+        "dp_charges": dp_charge,
         "slippage": slippage,
     }
 

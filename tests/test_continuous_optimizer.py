@@ -13,6 +13,8 @@ import os
 import json
 from pathlib import Path
 
+import pandas as pd
+
 from app.storage.db import db
 from app.system.tokens import token_tracker
 from app.trading.continuous_optimizer import (
@@ -109,6 +111,34 @@ class TestContinuousOptimizer(unittest.IsolatedAsyncioTestCase):
 
         if test_plan_path.exists():
             test_plan_path.unlink()
+
+
+    async def test_phase1_fee_aware_baseline_uses_validated_setups(self):
+        """Phase 1b must run the fee-aware selector (sweeps/RS) over preloaded data."""
+        day1 = [
+            {"date": "2026-01-01", "time": "09:15", "open": 98.0, "high": 99.0, "low": 97.0, "close": 98.5, "volume": 1000},
+            {"date": "2026-01-01", "time": "10:15", "open": 98.5, "high": 99.0, "low": 96.0, "close": 98.0, "volume": 1000},
+            {"date": "2026-01-01", "time": "11:15", "open": 98.0, "high": 98.5, "low": 95.0, "close": 97.0, "volume": 1000},
+            {"date": "2026-01-01", "time": "12:15", "open": 97.0, "high": 97.5, "low": 94.0, "close": 96.0, "volume": 1000},
+        ]
+        day2 = [
+            {"date": "2026-01-02", "time": "09:15", "open": 96.0, "high": 97.0, "low": 95.0, "close": 96.5, "volume": 1000},
+            {"date": "2026-01-02", "time": "10:15", "open": 99.0, "high": 101.0, "low": 90.0, "close": 100.0, "volume": 2000},
+            {"date": "2026-01-02", "time": "11:15", "open": 100.0, "high": 102.0, "low": 99.9, "close": 101.0, "volume": 1500},
+            {"date": "2026-01-02", "time": "12:15", "open": 101.0, "high": 101.5, "low": 100.5, "close": 101.0, "volume": 1200},
+        ]
+        data = {"AAA": pd.DataFrame(day1 + day2)}
+        res = await self.optimizer.run_phase1_fee_aware_baseline(preloaded_data=data)
+        for key in ("total_trades", "win_rate_pct", "net_pnl_inr", "profit_factor", "max_drawdown_pct"):
+            self.assertIn(key, res)
+        # The prior-day-low sweep on day 2 must have produced a trade.
+        self.assertGreaterEqual(res["total_trades"], 1)
+        self.assertGreater(res["net_pnl_inr"], 0.0)
+
+    async def test_phase1_fee_aware_baseline_empty_data(self):
+        res = await self.optimizer.run_phase1_fee_aware_baseline(preloaded_data={})
+        self.assertEqual(res["total_trades"], 0)
+        self.assertEqual(res["net_pnl_inr"], 0.0)
 
 
 if __name__ == "__main__":

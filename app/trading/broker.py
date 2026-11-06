@@ -40,6 +40,7 @@ class Position:
         target_price: Optional[float] = None,
         entry_fee_inr: float = 0.0,
         hold_to_close: bool = False,
+        delivery_hold: bool = False,
         margin_allocated: Optional[float] = None,
     ):
         self.symbol = symbol.upper()
@@ -50,6 +51,12 @@ class Position:
         self.target_price = round(float(target_price), 2) if target_price else None
         self.entry_fee_inr = round(float(entry_fee_inr), 2)
         self.hold_to_close = bool(hold_to_close)
+        # delivery_hold marks a multi-day delivery swing position that must
+        # survive the 15:20 EOD square-off. Unlike ``hold_to_close`` (which
+        # only suppresses an early profit take on an intraday trade and is
+        # still flattened at the close), a delivery hold is closed only by its
+        # own stop/target or the strategy's maximum-hold time exit.
+        self.delivery_hold = bool(delivery_hold)
         
         # Index Options configuration
         self.is_index_option = self.symbol in INDEX_CONFIG
@@ -103,6 +110,7 @@ class Position:
             "target_price": self.target_price,
             "entry_fee_inr": self.entry_fee_inr,
             "hold_to_close": self.hold_to_close,
+            "delivery_hold": self.delivery_hold,
             "margin_allocated": self.margin_allocated,
             "invested_value": self.margin_allocated,
             "current_value": round(self.margin_allocated + self.unrealized_pnl, 2),
@@ -142,6 +150,7 @@ class Account:
                 target_price=p.get("target_price"),
                 entry_fee_inr=p.get("entry_fee_inr", 0.0),
                 hold_to_close=bool(p.get("hold_to_close", 0)),
+                delivery_hold=bool(p.get("delivery_hold", 0)),
             )
             pos.created_at = p.get("created_at", pos.created_at)
             self.positions[p["symbol"]] = pos
@@ -260,6 +269,7 @@ class BaseBroker(ABC):
         target_price: Optional[float] = None,
         exit_reason: Optional[str] = None,
         hold_to_close: bool = False,
+        delivery_hold: bool = False,
     ) -> Dict[str, Any]:
         pass
 
@@ -395,6 +405,7 @@ class PaperBroker(BaseBroker):
         target_price: Optional[float] = None,
         exit_reason: Optional[str] = None,
         hold_to_close: bool = False,
+        delivery_hold: bool = False,
     ) -> Dict[str, Any]:
         t0 = time.perf_counter_ns()
         sym = symbol.strip().upper()
@@ -477,6 +488,7 @@ class PaperBroker(BaseBroker):
                 target_price=target_price,
                 entry_fee_inr=fee,
                 hold_to_close=hold_to_close,
+                delivery_hold=delivery_hold,
                 margin_allocated=margin_allocated,
             )
             acc.positions[sym] = pos
@@ -490,6 +502,7 @@ class PaperBroker(BaseBroker):
                 target_price=pos.target_price,
                 entry_fee_inr=pos.entry_fee_inr,
                 hold_to_close=1 if pos.hold_to_close else 0,
+                delivery_hold=1 if pos.delivery_hold else 0,
             )
             pnl = 0.0
             gross_pnl = 0.0
@@ -554,6 +567,7 @@ class PaperBroker(BaseBroker):
                     target_price=pos.target_price,
                     entry_fee_inr=pos.entry_fee_inr,
                     hold_to_close=1 if pos.hold_to_close else 0,
+                    delivery_hold=1 if pos.delivery_hold else 0,
                 )
 
             entry_fee = entry_fee_alloc

@@ -940,6 +940,74 @@ body {
   font-style: italic;
 }
 
+/* Frozen-Baseline Paper-Truth View */
+.truth-verdict-tag {
+  font-weight: 700;
+}
+
+.truth-summary-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.truth-verdict {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.truth-reason {
+  font-size: 10px;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+
+.truth-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.truth-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  padding: 6px 8px;
+}
+
+.truth-lbl {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.truth-cell strong,
+.truth-cell-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.truth-note {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 6px;
+}
+
 /* Modals */
 .modal-backdrop {
   position: fixed;

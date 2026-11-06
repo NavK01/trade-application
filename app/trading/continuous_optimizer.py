@@ -38,6 +38,7 @@ from app.trading.institutional_engine import (
     detect_liquidity_sweeps_and_absorption,
 )
 from app.trading.backtester import backtest_engine
+from app.trading.fee_aware_selector import FeeAwareSelector
 
 logger = logging.getLogger("continuous_optimizer")
 logging.basicConfig(
@@ -189,24 +190,75 @@ class ContinuousOptimizer:
                 time_filter=True,
                 primary_only=True,
             )
-            return {
-                "total_trades": res.get("total_trades", 0),
-                "winning_trades": res.get("winning_trades", 0),
-                "losing_trades": res.get("losing_trades", 0),
-                "win_rate_pct": res.get("win_rate_pct", 0.0),
-                "gross_pnl_inr": res.get("gross_pnl_inr", 0.0),
-                "fees_inr": res.get("fees_inr", 0.0),
-                "net_pnl_inr": res.get("net_pnl_before_ai_inr", 0.0),
-                "profit_factor": res.get("profit_factor", 1.0),
-                "max_drawdown_pct": res.get("max_drawdown_pct", 0.0),
-            }
+            return self._phase1_summary(res)
         except Exception as e:
             logger.error(f"Error in Phase 1 1-Year Baseline: {e}", exc_info=True)
-            return {
-                "total_trades": 0, "winning_trades": 0, "losing_trades": 0,
-                "win_rate_pct": 0.0, "gross_pnl_inr": 0.0, "fees_inr": 0.0,
-                "net_pnl_inr": 0.0, "profit_factor": 1.0, "max_drawdown_pct": 0.0,
-            }
+            return self._empty_phase1_result()
+
+    # -------------------------------------------------------------------------
+    # Phase 1b: Fee-aware intraday baseline (Zero AI)
+    # -------------------------------------------------------------------------
+    async def run_phase1_fee_aware_baseline(
+        self, preloaded_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Fee-aware intraday baseline over the same 1-year / 1-hour universe.
+
+        The shipped primary edge (``momentum_continuation``) is fee-negative at
+        the 1-hour horizon because it holds to the close. This arm runs the
+        walk-forward validated fee-aware setups (opening EMA-20 pullback, prior-
+        day liquidity sweeps long/short, and the relative-strength/RVOL leader)
+        through the exact same execution, sizing and gate machinery so the
+        optimizer compares like with like. Data is fetched once and handed to
+        the backtester via ``preloaded_data`` so the selector and the simulation
+        share identical frames.
+        """
+        logger.info("📊 Running Phase 1b: Fee-aware intraday baseline (Zero AI)...")
+        try:
+            data = preloaded_data
+            if data is None:
+                data = backtest_engine.fetch_historical_bars(
+                    LIQUID_NSE_EQUITIES, period="1y", interval="1h"
+                )
+            if not data:
+                logger.warning("Phase 1b: no market data returned; skipping fee-aware baseline.")
+                return self._empty_phase1_result()
+            data = dict(data)
+            selector = FeeAwareSelector(data, interval="1h")
+            res = await backtest_engine.run_backtest(
+                symbols=list(data),
+                period="1y",
+                interval="1h",
+                use_deepseek=False,
+                time_filter=True,
+                strategy_override=selector.override,
+                preloaded_data=data,
+            )
+            return self._phase1_summary(res)
+        except Exception as e:
+            logger.error(f"Error in Phase 1b Fee-aware Baseline: {e}", exc_info=True)
+            return self._empty_phase1_result()
+
+    @staticmethod
+    def _empty_phase1_result() -> Dict[str, Any]:
+        return {
+            "total_trades": 0, "winning_trades": 0, "losing_trades": 0,
+            "win_rate_pct": 0.0, "gross_pnl_inr": 0.0, "fees_inr": 0.0,
+            "net_pnl_inr": 0.0, "profit_factor": 1.0, "max_drawdown_pct": 0.0,
+        }
+
+    @staticmethod
+    def _phase1_summary(res: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "total_trades": res.get("total_trades", 0),
+            "winning_trades": res.get("winning_trades", 0),
+            "losing_trades": res.get("losing_trades", 0),
+            "win_rate_pct": res.get("win_rate_pct", 0.0),
+            "gross_pnl_inr": res.get("gross_pnl_inr", 0.0),
+            "fees_inr": res.get("fees_inr", 0.0),
+            "net_pnl_inr": res.get("net_pnl_before_ai_inr", 0.0),
+            "profit_factor": res.get("profit_factor", 1.0),
+            "max_drawdown_pct": res.get("max_drawdown_pct", 0.0),
+        }
 
     # -------------------------------------------------------------------------
     # Phase 2: 1-Month Out-of-Sample Backtest with DeepSeek V4.1 Flash
@@ -800,6 +852,13 @@ Respond with raw JSON only:
                 f"Win Rate: {p1_res.get('win_rate_pct')}% | Net P&L: ₹{p1_res.get('net_pnl_inr'):+,.2f}"
             )
 
+            # 1b. Phase 1b: Fee-aware intraday baseline (Zero AI)
+            p1b_res = await self.run_phase1_fee_aware_baseline()
+            logger.info(
+                f"✅ Phase 1b (Fee-aware 1Y) Complete: {p1b_res.get('total_trades')} trades | "
+                f"Win Rate: {p1b_res.get('win_rate_pct')}% | Net P&L: ₹{p1b_res.get('net_pnl_inr'):+,.2f}"
+            )
+
             # 2. Phase 2: 1-Month Out-of-Sample Backtest (DeepSeek V4.1 Flash)
             p2_res = await self.run_phase2_1month_backtest(params=self.params, use_live_ai=True)
             logger.info(
@@ -820,6 +879,7 @@ Respond with raw JSON only:
                 "iteration": iter_num,
                 "timestamp": timestamp_str,
                 "phase1_1year_baseline": p1_res,
+                "phase1b_fee_aware_baseline": p1b_res,
                 "phase2_1month_oos": p2_res,
                 "phase3_gemini_self_healing": p3_res,
                 "active_parameters": asdict(self.params),
@@ -839,6 +899,7 @@ Respond with raw JSON only:
 
 * **Supervisors:** Gemini 4 Argon + DeepSeek V4.1 Flash MaaS
 * **Phase 1 (1Y Baseline Zero AI):** {p1_res.get('total_trades')} trades | Win%: {p1_res.get('win_rate_pct')}% | Net P&L: ₹{p1_res.get('net_pnl_inr'):+,.2f} | PF: {p1_res.get('profit_factor')}
+* **Phase 1b (Fee-aware 1Y Zero AI):** {p1b_res.get('total_trades')} trades | Win%: {p1b_res.get('win_rate_pct')}% | Net P&L: ₹{p1b_res.get('net_pnl_inr'):+,.2f} | PF: {p1b_res.get('profit_factor')}
 * **Phase 2 (1M OOS DeepSeek):** {p2_res.get('total_trades')} trades | Win%: {p2_res.get('win_rate_pct')}% | Net P&L: ₹{p2_res.get('net_pnl_inr'):+,.2f} | PF: {p2_res.get('profit_factor')} | Max DD: {p2_res.get('max_drawdown_pct')}%
 * **Token Usage Status:** Gemini In: {snapshot['token_budget_status']['gemini_input_tokens']:,} / 10M | Gemini Out: {snapshot['token_budget_status']['gemini_output_tokens']:,} / 3M | DeepSeek: {snapshot['token_budget_status']['deepseek_total_tokens']:,} / 10M
 * **Mutated Parameters:** Target: {self.params.min_target_pct}% | Sweep Vol Mult: {self.params.min_sweep_vol_multiplier}x | Breakeven Trigger: {self.params.breakeven_trigger_r}R | SL: {self.params.min_sl_pct}%

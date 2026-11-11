@@ -1,0 +1,189 @@
+{
+  "summary": {
+    "trades": 52,
+    "win_rate": 42.3,
+    "gross": 504.9,
+    "fees": 433.78,
+    "net": 71.12,
+    "pf": 1.07,
+    "max_dd": 3.87,
+    "ending_capital": 10071.12
+  },
+  "months": [
+    {
+      "month": "2025-10",
+      "trades": 1,
+      "win_rate": 0.0,
+      "gross": -16.91,
+      "fees": 9.45,
+      "net": -26.36,
+      "cum_net": -26.36,
+      "per_symbol": {
+        "GOLDBEES.NS": -26.36
+      }
+    },
+    {
+      "month": "2025-11",
+      "trades": 3,
+      "win_rate": 33.3,
+      "gross": 23.14,
+      "fees": 27.36,
+      "net": -4.22,
+      "cum_net": -30.58,
+      "per_symbol": {
+        "GOLDBEES.NS": -7.73,
+        "SBIN.NS": -25.47,
+        "TATAPOWER.NS": 28.98
+      }
+    },
+    {
+      "month": "2025-12",
+      "trades": 5,
+      "win_rate": 60.0,
+      "gross": 94.54,
+      "fees": 44.04,
+      "net": 50.5,
+      "cum_net": 19.92,
+      "per_symbol": {
+        "RELIANCE.NS": 51.99,
+        "SBIN.NS": 26.0,
+        "TATAPOWER.NS": -50.54,
+        "TATASTEEL.NS": 23.05
+      }
+    },
+    {
+      "month": "2026-01",
+      "trades": 6,
+      "win_rate": 50.0,
+      "gross": 505.89,
+      "fees": 52.25,
+      "net": 453.64,
+      "cum_net": 473.56,
+      "per_symbol": {
+        "GOLDBEES.NS": 486.49,
+        "SBIN.NS": -32.85
+      }
+    },
+    {
+      "month": "2026-02",
+      "trades": 5,
+      "win_rate": 20.0,
+      "gross": -112.65,
+      "fees": 31.45,
+      "net": -144.1,
+      "cum_net": 329.46,
+      "per_symbol": {
+        "GOLDBEES.NS": -84.62,
+        "RELIANCE.NS": -82.33,
+        "SBIN.NS": 22.85
+      }
+    },
+    {
+      "month": "2026-03",
+      "trades": 3,
+      "win_rate": 66.7,
+      "gross": 60.58,
+      "fees": 18.11,
+      "net": 42.47,
+      "cum_net": 371.93,
+      "per_symbol": {
+        "GOLDBEES.NS": 61.76,
+        "SBIN.NS": -19.29
+      }
+    },
+    {
+      "month": "2026-04",
+      "trades": 4,
+      "win_rate": 50.0,
+      "gross": 68.56,
+      "fees": 34.93,
+      "net": 33.63,
+      "cum_net": 405.56,
+      "per_symbol": {
+        "GOLDBEES.NS": 43.32,
+        "TATAPOWER.NS": -9.69
+      }
+    },
+    {
+      "month": "2026-05",
+      "trades": 4,
+      "win_rate": 0.0,
+      "gross": -167.14,
+      "fees": 31.99,
+      "net": -199.13,
+      "cum_net": 206.43,
+      "per_symbol": {
+        "GOLDBEES.NS": -75.64,
+        "RELIANCE.NS": -52.61,
+        "TATAPOWER.NS": -11.69,
+        "TATASTEEL.NS": -59.19
+      }
+    },
+    {
+      "month": "2026-06",
+      "trades": 5,
+      "win_rate": 60.0,
+      "gross": 22.13,
+      "fees": 39.3,
+      "net": -17.17,
+      "cum_net": 189.26,
+      "per_symbol": {
+        "GOLDBEES.NS": 6.46,
+        "SBIN.NS": -23.63
+      }
+    },
+    {
+      "month": "2026-07",
+      "trades": 4,
+      "win_rate": 50.0,
+      "gross": 87.71,
+      "fees": 34.48,
+      "net": 53.23,
+      "cum_net": 242.49,
+      "per_symbol": {
+        "GOLDBEES.NS": -5.43,
+        "RELIANCE.NS": -0.79,
+        "SBIN.NS": 59.45
+      }
+    },
+    {
+      "month": "2026-08",
+      "trades": 5,
+      "win_rate": 80.0,
+      "gross": 114.84,
+      "fees": 47.77,
+      "net": 67.07,
+      "cum_net": 309.56,
+      "per_symbol": {
+        "GOLDBEES.NS": 9.98,
+        "SBIN.NS": 31.77,
+        "TATAPOWER.NS": 25.32
+      }
+    },
+    {
+      "month": "2026-09",
+      "trades": 5,
+      "win_rate": 20.0,
+      "gross": -77.87,
+      "fees": 47.42,
+      "net": -125.29,
+      "cum_net": 184.27,
+      "per_symbol": {
+        "GOLDBEES.NS": -182.55,
+        "SBIN.NS": 57.26
+      }
+    },
+    {
+      "month": "2026-10",
+      "trades": 2,
+      "win_rate": 0.0,
+      "gross": -97.92,
+      "fees": 15.23,
+      "net": -113.15,
+      "cum_net": 71.12,
+      "per_symbol": {
+        "RELIANCE.NS": -113.15
+      }
+    }
+  ]
+}

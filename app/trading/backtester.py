@@ -87,6 +87,67 @@ def hard_invalidation(
     return None
 
 
+def edge_to_fee_ratio(
+    entry: float,
+    target: float,
+    quantity: int,
+    direction: str = "BUY",
+) -> float:
+    """Expected gross profit to target divided by round-trip transaction cost.
+
+    A ratio below 1.0 means the trade cannot pay for its own fees even if the
+    target is reached, so it has negative expectancy by construction. The
+    backtester uses this to reject fee-sink candidates before they open.
+
+    ``direction`` selects which fee schedule is charged on each leg: a long
+    buys then sells, a short sells then buys. The gross edge is the absolute
+    distance from entry to target either way.
+    """
+    if entry <= 0 or quantity <= 0:
+        return 0.0
+    gross_edge = abs(target - entry) * quantity
+    if gross_edge <= 0:
+        return 0.0
+    if direction.upper() == "SELL":
+        entry_fee = calculate_sell_fee(entry * quantity)
+        exit_fee = calculate_buy_fee(target * quantity)
+    else:
+        entry_fee = calculate_buy_fee(entry * quantity)
+        exit_fee = calculate_sell_fee(target * quantity)
+    round_trip = entry_fee + exit_fee
+    if round_trip <= 0:
+        return float("inf")
+    return gross_edge / round_trip
+
+
+def fee_to_risk_pct(
+    entry: float,
+    stop: float,
+    quantity: int,
+    direction: str = "BUY",
+) -> float:
+    """Round-trip transaction cost as a percentage of the rupee risk budget.
+
+    The risk budget is ``abs(entry - stop) * quantity``, i.e. the money the
+    stop can lose. When fees are a large fraction of that budget the trade is a
+    fee sink: the position is too small (or the stop too tight) for the fixed
+    cost to be amortised. Returns 100.0 when there is no risk budget (invalid
+    setup).
+    """
+    if entry <= 0 or quantity <= 0:
+        return 100.0
+    risk_inr = abs(entry - stop) * quantity
+    if risk_inr <= 0:
+        return 100.0
+    if direction.upper() == "SELL":
+        entry_fee = calculate_sell_fee(entry * quantity)
+        exit_fee = calculate_buy_fee(entry * quantity)
+    else:
+        entry_fee = calculate_buy_fee(entry * quantity)
+        exit_fee = calculate_sell_fee(entry * quantity)
+    return (entry_fee + exit_fee) / risk_inr * 100.0
+
+
 class HistoricalBacktestEngine:
     def __init__(self, initial_capital: Optional[float] = None):
         self.initial_capital = float(initial_capital or settings.INITIAL_CAPITAL_INR)
@@ -94,16 +155,18 @@ class HistoricalBacktestEngine:
     # ------------------------------------------------------------------
     # Data
     # ------------------------------------------------------------------
-    def fetch_historical_bars(self, symbols: List[str], period: str = "5d") -> Dict[str, pd.DataFrame]:
+    def fetch_historical_bars(
+        self, symbols: List[str], period: str = "5d", interval: str = "5m"
+    ) -> Dict[str, pd.DataFrame]:
         data: Dict[str, pd.DataFrame] = {}
         for sym in symbols:
             clean = sym.strip().upper()
             yf_sym = clean if ("." in clean or "^" in clean) else f"{clean}.NS"
             try:
-                df = yf.Ticker(yf_sym).history(period=period, interval="5m")
+                df = yf.Ticker(yf_sym).history(period=period, interval=interval)
                 if df.empty and yf_sym.endswith(".NS"):
                     df = yf.Ticker(yf_sym.replace(".NS", ".BO")).history(
-                        period=period, interval="5m"
+                        period=period, interval=interval
                     )
                 if df.empty:
                     continue
@@ -121,7 +184,7 @@ class HistoricalBacktestEngine:
                 df = df.reset_index(drop=True)
                 if not df.empty:
                     data[clean] = df
-                    logger.info("Loaded %d 5m bars for %s", len(df), clean)
+                    logger.info("Loaded %d %s bars for %s", len(df), interval, clean)
             except Exception as exc:
                 logger.error("Error fetching data for %s: %s", sym, exc)
         return data
@@ -210,33 +273,99 @@ Do not invent data. Do not return stop or target fields."""
         self,
         symbols: Optional[List[str]] = None,
         period: str = "5d",
+        interval: str = "5m",
         use_deepseek: bool = False,
         max_deepseek_calls: int = 15,
         time_filter: bool = True,
         primary_only: bool = True,
+        strategy_override: Optional[Any] = None,
+        ai_cost_hook: Optional[Any] = None,
+        intraday_leverage_mult: float = 1.0,
+        preloaded_data: Optional[Dict[str, pd.DataFrame]] = None,
     ) -> Dict[str, Any]:
         """
         primary_only: when True (default), entries are restricted to the
         validated primary edge (momentum_continuation). The secondary
         strategies are still evaluated for context but never open a position,
         because they have no positive expectancy after costs.
+
+        interval: bar size for the simulation. Defaults to "5m" (live
+        behaviour). "1h" is supported for longer-horizon tests; the strategy
+        windows and the intraday time gates scale accordingly.
+
+        strategy_override: optional callable ``(history, prev_day_ohlc,
+        interval) -> setup_dict`` used INSTEAD of the built-in suite. It lets a
+        research runner test an alternative strategy through the exact same
+        execution, sizing, fee, and AI-veto machinery. When None (the default)
+        the shipped suite is used and live behaviour is unchanged. The callable
+        may be a coroutine function (e.g. an AI-decides strategy that awaits a
+        model call); it is awaited transparently.
+
+        ai_cost_hook: optional zero-argument callable returning the cumulative
+        AI cost (in INR) incurred by a ``strategy_override``. The override path
+        does not go through the veto path's cost accounting, so a research
+        runner that makes its own model calls passes this hook to have that
+        spend charged against the result. When None (the default) nothing is
+        charged and live behaviour is unchanged.
+
+        intraday_leverage_mult: effective notional exposure as a multiple of
+        opening equity (NSE MIS margin). 1.0 (default) keeps the legacy
+        cash-funded cap of ``MAX_POSITION_PCT``. Values above 1.0 allow
+        risk-based sizing ``qty = min(max_risk / risk_per_share,
+        day_start_equity * intraday_leverage_mult / entry)`` so rupee profit
+        scales without increasing percentage friction, while the hard rupee
+        loss remains capped at ``RISK_PER_TRADE_PCT``.
+
+        preloaded_data: optional mapping of symbol -> OHLCV DataFrame. When
+        supplied the network fetch is skipped and this data is simulated
+        directly, which lets a caller (e.g. the continuous optimizer) build a
+        fee-aware selector over the exact frames it fetched rather than
+        monkey-patching ``fetch_historical_bars``. Must carry the same columns
+        the fetch produces (``timestamp``/``open``/``high``/``low``/``close``/
+        ``volume``/``time``/``date``). When None (the default) data is fetched
+        as before.
         """
+        hourly = interval in ("1h", "60m", "90m")
+        # Minimum bars required for a day to be tradable. 5m sessions have 75
+        # bars; hourly sessions have 7. Scale the floor so a partial day is
+        # still skipped but a full hourly day is not.
+        min_day_bars = 3 if hourly else 5
+        # Last entry time: 5m bars can enter up to 14:45; hourly bars only have
+        # a 14:15 bar before the 15:15 close, so the cutoff moves earlier.
+        last_entry_time = "13:15" if hourly else "14:45"
+        # Midday lull filter only makes sense on intraday bars.
+        lull_start, lull_end = "11:30", "13:15"
+
         test_symbols = symbols or ["RELIANCE", "TCS", "INFY", "VEDL", "SBIN", "ICICIBANK"]
-        logger.info("Starting next-bar backtest across %d symbols over %s", len(test_symbols), period)
-        stock_data = self.fetch_historical_bars(test_symbols, period=period)
+        logger.info(
+            "Starting next-bar backtest across %d symbols over %s (%s bars)",
+            len(test_symbols), period, interval,
+        )
+        stock_data = (
+            dict(preloaded_data)
+            if preloaded_data is not None
+            else self.fetch_historical_bars(test_symbols, period=period, interval=interval)
+        )
         if not stock_data:
             return {"error": "Failed to fetch historical market data."}
 
-        # Prior-day OHLC for Camarilla pivots.
+        # Prior-day OHLC as seen on each session. The value stored under a
+        # date is the PREVIOUS trading day's OHLC, so pivot and sweep strategies
+        # never see the current session's own range (no look-ahead).
         prior_day: Dict[str, Dict[str, Dict[str, float]]] = {}
         for sym, df in stock_data.items():
             prior_day[sym] = {}
-            for date_str, day in df.groupby("date"):
-                prior_day[sym][date_str] = {
+            day_ohlc = {
+                date_str: {
                     "high": float(day["high"].max()),
                     "low": float(day["low"].min()),
                     "close": float(day["close"].iloc[-1]),
                 }
+                for date_str, day in df.groupby("date")
+            }
+            ordered = sorted(day_ohlc)
+            for i in range(1, len(ordered)):
+                prior_day[sym][ordered[i]] = day_ohlc[ordered[i - 1]]
 
         all_dates = sorted({d for df in stock_data.values() for d in df["date"].unique()})
         cash = self.initial_capital
@@ -247,13 +376,57 @@ Do not invent data. Do not return stop or target fields."""
         max_position_pct = settings.MAX_POSITION_PCT
         risk_per_trade = settings.RISK_PER_TRADE_PCT / 100.0
         slippage = settings.PAPER_SLIPPAGE_BPS / 10_000.0
+        leverage = float(intraday_leverage_mult) if intraday_leverage_mult and intraday_leverage_mult > 0 else 1.0
+        # Effective notional cap. With leverage 1.0 this is the legacy cash-funded
+        # cap (MAX_POSITION_PCT of equity); above 1.0 it becomes NSE MIS exposure.
+        exposure_pct = max(max_position_pct, leverage)
+
+        def _settle(
+            trade: Dict[str, Any],
+            exit_price: float,
+            exit_reason: str,
+            exit_time: str,
+        ) -> float:
+            """Close ``trade`` at ``exit_price``, update cash, return net PnL.
+
+            Long: exit leg is a SELL (sell fee). Short: exit leg is a BUY
+            (buy fee, i.e. buy-to-cover). Cash is credited/debited for the
+            actual leg so leverage can drive it negative intraday (financed by
+            MIS margin) and the session restores it when the book is flat.
+            """
+            nonlocal cash
+            exit_price = round(float(exit_price), 2)
+            qty = trade["quantity"]
+            if trade["action"] == "SELL":
+                exit_fee = calculate_buy_fee(exit_price * qty)
+                gross = round((trade["entry_price"] - exit_price) * qty, 2)
+                cash = round(cash - exit_price * qty - exit_fee, 2)
+            else:
+                exit_fee = calculate_sell_fee(exit_price * qty)
+                gross = round((exit_price - trade["entry_price"]) * qty, 2)
+                cash = round(cash + exit_price * qty - exit_fee, 2)
+            net = round(gross - trade["entry_fee"] - exit_fee, 2)
+            ret_sign = -1.0 if trade["action"] == "SELL" else 1.0
+            trade.update({
+                "exit_time": exit_time,
+                "exit_price": exit_price,
+                "exit_reason": exit_reason,
+                "gross_pnl": gross,
+                "fees_inr": round(trade["entry_fee"] + exit_fee, 2),
+                "net_pnl": net,
+                "return_pct": round(
+                    ret_sign * (exit_price / trade["entry_price"] - 1) * 100, 2
+                ),
+                "won": net > 0,
+            })
+            return net
 
         for date_str in all_dates:
             day_frames = {
                 sym: df[df["date"] == date_str].reset_index(drop=True)
                 for sym, df in stock_data.items()
             }
-            day_frames = {s: d for s, d in day_frames.items() if len(d) >= 5}
+            day_frames = {s: d for s, d in day_frames.items() if len(d) >= min_day_bars}
             if not day_frames:
                 continue
 
@@ -276,45 +449,65 @@ Do not invent data. Do not return stop or target fields."""
                         bar = bar_rows.iloc[0]
                         exit_price = None
                         exit_reason = None
+                        is_short = open_trade["action"] == "SELL"
                         bar_open = float(bar["open"])
                         bar_high = float(bar["high"])
                         bar_low = float(bar["low"])
                         bar_close = float(bar["close"])
 
-                        if bar_open <= open_trade["stop_loss"]:
-                            exit_price, exit_reason = bar_open, "STOP_GAP"
-                        elif bar_low <= open_trade["stop_loss"]:
-                            exit_price, exit_reason = open_trade["stop_loss"], "STOP_LOSS"
-                        elif not open_trade.get("hold_to_close"):
-                            if bar_open >= open_trade["target_1"]:
-                                exit_price, exit_reason = bar_open, "TARGET_GAP"
-                            elif bar_high >= open_trade["target_1"]:
-                                exit_price, exit_reason = open_trade["target_1"], "TARGET_HIT"
+                        if is_short:
+                            # Short: stop sits ABOVE entry, target BELOW entry.
+                            if bar_open >= open_trade["stop_loss"]:
+                                exit_price, exit_reason = bar_open, "STOP_GAP"
+                            elif bar_high >= open_trade["stop_loss"]:
+                                exit_price, exit_reason = open_trade["stop_loss"], "STOP_LOSS"
+                            elif not open_trade.get("hold_to_close"):
+                                if bar_open <= open_trade["target_1"]:
+                                    exit_price, exit_reason = bar_open, "TARGET_GAP"
+                                elif bar_low <= open_trade["target_1"]:
+                                    exit_price, exit_reason = open_trade["target_1"], "TARGET_HIT"
+                        else:
+                            if bar_open <= open_trade["stop_loss"]:
+                                exit_price, exit_reason = bar_open, "STOP_GAP"
+                            elif bar_low <= open_trade["stop_loss"]:
+                                exit_price, exit_reason = open_trade["stop_loss"], "STOP_LOSS"
+                            elif not open_trade.get("hold_to_close"):
+                                if bar_open >= open_trade["target_1"]:
+                                    exit_price, exit_reason = bar_open, "TARGET_GAP"
+                                elif bar_high >= open_trade["target_1"]:
+                                    exit_price, exit_reason = open_trade["target_1"], "TARGET_HIT"
                         if exit_price is None and time_str >= "15:20":
                             exit_price, exit_reason = bar_close, "EOD_SQUARE_OFF"
 
+                        # Profit-lock ratchet. Effective from the NEXT bar
+                        # (this bar's extreme is consumed here, after the stop
+                        # was already evaluated), so an intrabar lock-out cannot
+                        # be assumed. Long: only ever raises the stop. Short:
+                        # only ever lowers it, using the bar LOW as the
+                        # favourable extreme.
+                        ratchet = open_trade.get("ratchet_levels") or []
+                        if exit_price is None and ratchet:
+                            entry_ref = float(open_trade["entry_price"])
+                            if is_short:
+                                gain_pct = (1.0 - bar_low / entry_ref) * 100.0
+                            else:
+                                gain_pct = (bar_high / entry_ref - 1.0) * 100.0
+                            ridx = int(open_trade.get("ratchet_idx", 0))
+                            while ridx < len(ratchet) and gain_pct >= float(ratchet[ridx]["trigger_pct"]):
+                                lock_frac = float(ratchet[ridx]["lock_pct"]) / 100.0
+                                if is_short:
+                                    lock_price = round(entry_ref * (1.0 - lock_frac), 2)
+                                    if lock_price < open_trade["stop_loss"]:
+                                        open_trade["stop_loss"] = lock_price
+                                else:
+                                    lock_price = round(entry_ref * (1.0 + lock_frac), 2)
+                                    if lock_price > open_trade["stop_loss"]:
+                                        open_trade["stop_loss"] = lock_price
+                                ridx += 1
+                            open_trade["ratchet_idx"] = ridx
+
                         if exit_price is not None:
-                            exit_price = round(float(exit_price), 2)
-                            exit_fee = calculate_sell_fee(exit_price * open_trade["quantity"])
-                            gross = round(
-                                (exit_price - open_trade["entry_price"]) * open_trade["quantity"], 2
-                            )
-                            net = round(gross - open_trade["entry_fee"] - exit_fee, 2)
-                            cash = round(
-                                cash + exit_price * open_trade["quantity"] - exit_fee, 2
-                            )
-                            open_trade.update({
-                                "exit_time": time_str,
-                                "exit_price": exit_price,
-                                "exit_reason": exit_reason,
-                                "gross_pnl": gross,
-                                "fees_inr": round(open_trade["entry_fee"] + exit_fee, 2),
-                                "net_pnl": net,
-                                "return_pct": round(
-                                    (exit_price / open_trade["entry_price"] - 1) * 100, 2
-                                ),
-                                "won": net > 0,
-                            })
+                            net = _settle(open_trade, exit_price, exit_reason, time_str)
                             trades.append(open_trade)
                             day_realized_pnl += net
                             open_trade = None
@@ -340,24 +533,7 @@ Do not invent data. Do not return stop or target fields."""
                     rows = frame[frame["time"] == time_str] if frame is not None else pd.DataFrame()
                     if not rows.empty:
                         exit_price = round(float(rows.iloc[0]["close"]), 2)
-                        exit_fee = calculate_sell_fee(exit_price * open_trade["quantity"])
-                        gross = round(
-                            (exit_price - open_trade["entry_price"]) * open_trade["quantity"], 2
-                        )
-                        net = round(gross - open_trade["entry_fee"] - exit_fee, 2)
-                        cash = round(cash + exit_price * open_trade["quantity"] - exit_fee, 2)
-                        open_trade.update({
-                            "exit_time": time_str,
-                            "exit_price": exit_price,
-                            "exit_reason": day_lock_reason,
-                            "gross_pnl": gross,
-                            "fees_inr": round(open_trade["entry_fee"] + exit_fee, 2),
-                            "net_pnl": net,
-                            "return_pct": round(
-                                (exit_price / open_trade["entry_price"] - 1) * 100, 2
-                            ),
-                            "won": net > 0,
-                        })
+                        net = _settle(open_trade, exit_price, day_lock_reason, time_str)
                         trades.append(open_trade)
                         day_realized_pnl += net
                         open_trade = None
@@ -365,9 +541,9 @@ Do not invent data. Do not return stop or target fields."""
                 # 3. Look for a new entry, filled on the NEXT bar's open.
                 if open_trade or day_locked or day_trades >= settings.MAX_TRADES_PER_DAY:
                     continue
-                if time_str >= "14:45":
+                if time_str >= last_entry_time:
                     continue
-                if time_filter and ("11:30" <= time_str <= "13:15"):
+                if time_filter and (lull_start <= time_str <= lull_end):
                     continue
 
                 candidates = []
@@ -382,30 +558,104 @@ Do not invent data. Do not return stop or target fields."""
                     if str(next_bar["time"]) > "15:20":
                         continue
                     history = frame.iloc[: idx + 1].to_dict(orient="records")
-                    eval_res = intraday_engine.evaluate_all_strategies(
-                        history,
-                        prev_day_ohlc=prior_day.get(sym, {}).get(date_str),
-                    )
-                    if eval_res.get("composite_signal") != "BUY":
+                    if strategy_override is not None:
+                        # Research path: the override owns signal generation and
+                        # returns a setup dict (or None). Execution, sizing, fees
+                        # and the AI veto below are identical to the shipped path.
+                        # The override signature has no symbol argument, so tag
+                        # each record with it; an override that needs the symbol
+                        # (e.g. an AI-decides strategy) can read it from the
+                        # history it is handed.
+                        for _rec in history:
+                            _rec["symbol"] = sym
+                        best = strategy_override(
+                            history,
+                            prior_day.get(sym, {}).get(date_str),
+                            interval,
+                        )
+                        if asyncio.iscoroutine(best):
+                            best = await best
+                        if not best or not best.get("active"):
+                            continue
+                        direction = str(best.get("signal", "BUY")).upper()
+                        eval_res = {
+                            "indicators": {
+                                "price": float(best.get("entry_price", 0.0)),
+                                "vwap": float(best.get("vwap", 0.0) or 0.0),
+                                "or_high": float(best.get("or_high", 0.0) or 0.0),
+                            }
+                        }
+                    else:
+                        eval_res = intraday_engine.evaluate_all_strategies(
+                            history,
+                            prev_day_ohlc=prior_day.get(sym, {}).get(date_str),
+                            interval=interval,
+                        )
+                        direction = str(eval_res.get("composite_signal", "")).upper()
+                        if direction not in ("BUY", "SELL"):
+                            continue
+                        best = eval_res.get("best_strategy")
+                        if not best:
+                            continue
+                        if primary_only and best.get("strategy_id") != "momentum_continuation":
+                            continue
+                    if direction not in ("BUY", "SELL"):
                         continue
-                    best = eval_res.get("best_strategy")
-                    if not best:
-                        continue
-                    if primary_only and best.get("strategy_id") != "momentum_continuation":
-                        continue
-                    entry_px = round(float(next_bar["open"]) * (1.0 + slippage), 2)
-                    stop = round(float(best.get("stop_loss", entry_px * 0.992)), 2)
-                    target = round(float(best.get("target_1", entry_px * 1.014)), 2)
-                    if stop >= entry_px or target <= entry_px:
-                        continue
+                    is_short = direction == "SELL"
+                    if is_short:
+                        entry_px = round(float(next_bar["open"]) * (1.0 - slippage), 2)
+                    else:
+                        entry_px = round(float(next_bar["open"]) * (1.0 + slippage), 2)
+                    # Fee-aware strategies publish percentage geometry because
+                    # the fill is on this next bar's open; anchor it there.
+                    if best.get("stop_pct") and best.get("target_pct"):
+                        if is_short:
+                            stop = round(entry_px * (1.0 + float(best["stop_pct"]) / 100.0), 2)
+                            target = round(entry_px * (1.0 - float(best["target_pct"]) / 100.0), 2)
+                        else:
+                            stop = round(entry_px * (1.0 - float(best["stop_pct"]) / 100.0), 2)
+                            target = round(entry_px * (1.0 + float(best["target_pct"]) / 100.0), 2)
+                    else:
+                        stop = round(float(best.get("stop_loss", entry_px * 0.992)), 2)
+                        target = round(float(best.get("target_1", entry_px * 1.014)), 2)
+                    # Direction-aware geometry validation: long needs
+                    # stop < entry < target; short needs target < entry < stop.
+                    if is_short:
+                        if not (target < entry_px < stop):
+                            continue
+                    else:
+                        if stop >= entry_px or target <= entry_px:
+                            continue
+                    # Fee-aware gate: estimate the position size the risk model
+                    # would take and reject the candidate when its gross edge to
+                    # target cannot cover round-trip fees by the required
+                    # multiple. This is what stops the strategy from churning
+                    # fee-sink trades (e.g. GOLDBEES) that lose money after costs.
+                    est_risk_per_share = abs(entry_px - stop)
+                    if est_risk_per_share > 0:
+                        est_max_risk = day_start_equity * risk_per_trade
+                        est_max_position = day_start_equity * exposure_pct
+                        est_qty = int(min(
+                            est_max_risk / est_risk_per_share,
+                            est_max_position / entry_px,
+                        ))
+                        if est_qty > 0:
+                            ratio = edge_to_fee_ratio(entry_px, target, est_qty, direction=direction)
+                            if ratio < settings.MIN_EDGE_TO_FEE_RATIO:
+                                continue
+                            fee_risk = fee_to_risk_pct(entry_px, stop, est_qty, direction=direction)
+                            if fee_risk > settings.MAX_FEE_TO_RISK_PCT:
+                                continue
                     candidates.append({
                         "symbol": sym,
                         "setup": best,
                         "indicators": eval_res.get("indicators", {}),
                         "recent_bars": history[-3:],
+                        "direction": direction,
                         "entry_price": entry_px,
                         "stop_loss": stop,
                         "target_1": target,
+                        "ratchet_levels": best.get("ratchet_levels") or [],
                         "entry_time": str(next_bar["time"]),
                     })
 
@@ -445,34 +695,48 @@ Do not invent data. Do not return stop or target fields."""
                     # The AI is veto-only: it may never move the validated stop or
                     # target, because that destroys the momentum edge.
 
+                direction = chosen["direction"]
+                is_short = direction == "SELL"
                 entry = chosen["entry_price"]
                 stop = chosen["stop_loss"]
                 target = chosen["target_1"]
-                if stop >= entry or target <= entry:
+                if is_short:
+                    if not (target < entry < stop):
+                        continue
+                elif stop >= entry or target <= entry:
                     continue
-                risk_per_share = entry - stop
+                risk_per_share = abs(entry - stop)
                 max_risk = day_start_equity * risk_per_trade
-                max_position = day_start_equity * max_position_pct
+                max_position = day_start_equity * exposure_pct
                 qty = int(min(max_risk / risk_per_share, max_position / entry))
-                # Ensure entry fee is funded.
-                while qty > 0:
-                    cost = entry * qty
-                    entry_fee = calculate_buy_fee(cost)
-                    if cost + entry_fee <= cash:
-                        break
-                    qty -= 1
+                # Ensure the entry leg is funded out of cash when running
+                # unleveraged (legacy behaviour). With MIS leverage the notional
+                # may exceed cash; the exposure cap above is the binding limit.
+                if exposure_pct <= max_position_pct + 1e-9:
+                    while qty > 0:
+                        cost = entry * qty
+                        entry_fee = (
+                            calculate_sell_fee(cost) if is_short else calculate_buy_fee(cost)
+                        )
+                        if cost + entry_fee <= cash:
+                            break
+                        qty -= 1
                 if qty <= 0:
                     continue
 
                 cost = round(entry * qty, 2)
-                entry_fee = calculate_buy_fee(cost)
-                cash = round(cash - cost - entry_fee, 2)
+                if is_short:
+                    entry_fee = calculate_sell_fee(cost)
+                    cash = round(cash + cost - entry_fee, 2)
+                else:
+                    entry_fee = calculate_buy_fee(cost)
+                    cash = round(cash - cost - entry_fee, 2)
                 open_trade = {
                     "symbol": chosen["symbol"],
                     "date": date_str,
                     "strategy": chosen["setup"].get("name", "confluence"),
                     "strategy_id": chosen["setup"].get("strategy_id", "confluence"),
-                    "action": "BUY",
+                    "action": direction,
                     "entry_time": chosen["entry_time"],
                     "entry_price": entry,
                     "stop_loss": stop,
@@ -480,6 +744,8 @@ Do not invent data. Do not return stop or target fields."""
                     "quantity": qty,
                     "entry_fee": entry_fee,
                     "hold_to_close": bool(chosen["setup"].get("hold_to_close")),
+                    "ratchet_levels": chosen.get("ratchet_levels") or [],
+                    "ratchet_idx": 0,
                     "validated_by_deepseek": bool(use_deepseek and deepseek_calls),
                 }
                 day_trades += 1
@@ -489,20 +755,7 @@ Do not invent data. Do not return stop or target fields."""
                 frame = day_frames[open_trade["symbol"]]
                 last = frame.iloc[-1]
                 exit_price = round(float(last["close"]), 2)
-                exit_fee = calculate_sell_fee(exit_price * open_trade["quantity"])
-                gross = round((exit_price - open_trade["entry_price"]) * open_trade["quantity"], 2)
-                net = round(gross - open_trade["entry_fee"] - exit_fee, 2)
-                cash = round(cash + exit_price * open_trade["quantity"] - exit_fee, 2)
-                open_trade.update({
-                    "exit_time": str(last["time"]),
-                    "exit_price": exit_price,
-                    "exit_reason": "EOD_SQUARE_OFF",
-                    "gross_pnl": gross,
-                    "fees_inr": round(open_trade["entry_fee"] + exit_fee, 2),
-                    "net_pnl": net,
-                    "return_pct": round((exit_price / open_trade["entry_price"] - 1) * 100, 2),
-                    "won": net > 0,
-                })
+                net = _settle(open_trade, exit_price, "EOD_SQUARE_OFF", str(last["time"]))
                 trades.append(open_trade)
                 day_realized_pnl += net
                 open_trade = None
@@ -526,6 +779,23 @@ Do not invent data. Do not return stop or target fields."""
         losses = [t for t in trades if t["net_pnl"] <= 0]
         gross_pnl = round(sum(t["gross_pnl"] for t in trades), 2)
         fees = round(sum(t["fees_inr"] for t in trades), 2)
+        # A strategy_override that makes its own model calls reports its
+        # cumulative spend through ai_cost_hook; charge it like the veto path.
+        if ai_cost_hook is not None:
+            try:
+                override_cost = float(ai_cost_hook() or 0.0)
+            except Exception as exc:
+                logger.warning("ai_cost_hook failed: %s", exc)
+                override_cost = 0.0
+            if override_cost > 0:
+                ai_cost_total += override_cost
+                if daily_results:
+                    daily_results[-1]["ai_cost_inr"] = round(
+                        daily_results[-1]["ai_cost_inr"] + override_cost, 2
+                    )
+                    daily_results[-1]["net_after_ai_inr"] = round(
+                        daily_results[-1]["net_after_ai_inr"] - override_cost, 2
+                    )
         net_before_ai = round(gross_pnl - fees, 2)
         net_after_ai = round(net_before_ai - ai_cost_total, 2)
         win_rate = round(len(wins) / total_trades * 100, 1) if total_trades else 0.0
@@ -570,8 +840,10 @@ Do not invent data. Do not return stop or target fields."""
             "profit_factor": profit_factor,
             "max_drawdown_pct": round(max_dd, 2),
             "deepseek_queries_count": deepseek_calls,
+            "interval": interval,
             "time_filter_applied": time_filter,
             "primary_only": primary_only,
+            "intraday_leverage_mult": leverage,
             "daily_results": daily_results,
             "strategy_breakdown": strategy_stats,
             "trades": trades,

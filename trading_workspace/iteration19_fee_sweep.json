@@ -1,0 +1,268 @@
+[
+  {
+    "max_fee_to_risk_pct": 100.0,
+    "trades": 59,
+    "win_rate": 39.0,
+    "gross": 349.11,
+    "fees": 501.06,
+    "net": -151.95,
+    "net_pct": -1.52,
+    "pf": 0.87,
+    "max_dd": 4.87,
+    "per_symbol": {
+      "GOLDBEES.NS": {
+        "n": 35,
+        "w": 14,
+        "net": 45.63
+      },
+      "TATAPOWER.NS": {
+        "n": 4,
+        "w": 2,
+        "net": -6.99
+      },
+      "SBIN.NS": {
+        "n": 11,
+        "w": 6,
+        "net": 94.43
+      },
+      "TATASTEEL.NS": {
+        "n": 3,
+        "w": 1,
+        "net": -36.14
+      },
+      "RELIANCE.NS": {
+        "n": 6,
+        "w": 0,
+        "net": -248.88
+      }
+    }
+  },
+  {
+    "max_fee_to_risk_pct": 40.0,
+    "trades": 54,
+    "win_rate": 42.6,
+    "gross": 443.25,
+    "fees": 457.76,
+    "net": -14.51,
+    "net_pct": -0.15,
+    "pf": 0.99,
+    "max_dd": 4.26,
+    "per_symbol": {
+      "GOLDBEES.NS": {
+        "n": 30,
+        "w": 14,
+        "net": 186.95
+      },
+      "TATAPOWER.NS": {
+        "n": 4,
+        "w": 2,
+        "net": -5.93
+      },
+      "SBIN.NS": {
+        "n": 11,
+        "w": 6,
+        "net": 89.49
+      },
+      "TATASTEEL.NS": {
+        "n": 3,
+        "w": 1,
+        "net": -36.14
+      },
+      "RELIANCE.NS": {
+        "n": 6,
+        "w": 0,
+        "net": -248.88
+      }
+    }
+  },
+  {
+    "max_fee_to_risk_pct": 30.0,
+    "trades": 54,
+    "win_rate": 42.6,
+    "gross": 427.56,
+    "fees": 451.86,
+    "net": -24.3,
+    "net_pct": -0.24,
+    "pf": 0.98,
+    "max_dd": 4.35,
+    "per_symbol": {
+      "GOLDBEES.NS": {
+        "n": 29,
+        "w": 14,
+        "net": 188.85
+      },
+      "TATAPOWER.NS": {
+        "n": 5,
+        "w": 2,
+        "net": -17.62
+      },
+      "SBIN.NS": {
+        "n": 11,
+        "w": 6,
+        "net": 89.49
+      },
+      "TATASTEEL.NS": {
+        "n": 3,
+        "w": 1,
+        "net": -36.14
+      },
+      "RELIANCE.NS": {
+        "n": 6,
+        "w": 0,
+        "net": -248.88
+      }
+    }
+  },
+  {
+    "max_fee_to_risk_pct": 25.0,
+    "trades": 52,
+    "win_rate": 42.3,
+    "gross": 504.9,
+    "fees": 433.78,
+    "net": 71.12,
+    "net_pct": 0.71,
+    "pf": 1.07,
+    "max_dd": 3.87,
+    "per_symbol": {
+      "GOLDBEES.NS": {
+        "n": 26,
+        "w": 12,
+        "net": 225.68
+      },
+      "TATAPOWER.NS": {
+        "n": 5,
+        "w": 2,
+        "net": -17.62
+      },
+      "SBIN.NS": {
+        "n": 11,
+        "w": 6,
+        "net": 96.09
+      },
+      "RELIANCE.NS": {
+        "n": 7,
+        "w": 1,
+        "net": -196.89
+      },
+      "TATASTEEL.NS": {
+        "n": 3,
+        "w": 1,
+        "net": -36.14
+      }
+    }
+  },
+  {
+    "max_fee_to_risk_pct": 20.0,
+    "trades": 48,
+    "win_rate": 37.5,
+    "gross": 26.82,
+    "fees": 383.68,
+    "net": -356.86,
+    "net_pct": -3.57,
+    "pf": 0.66,
+    "max_dd": 5.27,
+    "per_symbol": {
+      "SBIN.NS": {
+        "n": 11,
+        "w": 5,
+        "net": -29.62
+      },
+      "TATAPOWER.NS": {
+        "n": 4,
+        "w": 1,
+        "net": -44.25
+      },
+      "GOLDBEES.NS": {
+        "n": 23,
+        "w": 10,
+        "net": -8.52
+      },
+      "TATASTEEL.NS": {
+        "n": 3,
+        "w": 1,
+        "net": -34.73
+      },
+      "RELIANCE.NS": {
+        "n": 7,
+        "w": 1,
+        "net": -239.74
+      }
+    }
+  },
+  {
+    "max_fee_to_risk_pct": 15.0,
+    "trades": 31,
+    "win_rate": 32.3,
+    "gross": -110.86,
+    "fees": 222.69,
+    "net": -333.55,
+    "net_pct": -3.34,
+    "pf": 0.58,
+    "max_dd": 5.24,
+    "per_symbol": {
+      "SBIN.NS": {
+        "n": 8,
+        "w": 2,
+        "net": -138.28
+      },
+      "TATAPOWER.NS": {
+        "n": 4,
+        "w": 1,
+        "net": -72.96
+      },
+      "TATASTEEL.NS": {
+        "n": 4,
+        "w": 1,
+        "net": -114.32
+      },
+      "GOLDBEES.NS": {
+        "n": 11,
+        "w": 5,
+        "net": 108.56
+      },
+      "RELIANCE.NS": {
+        "n": 4,
+        "w": 1,
+        "net": -116.55
+      }
+    }
+  },
+  {
+    "max_fee_to_risk_pct": 10.0,
+    "trades": 16,
+    "win_rate": 31.2,
+    "gross": 3.91,
+    "fees": 85.93,
+    "net": -82.02,
+    "net_pct": -0.82,
+    "pf": 0.71,
+    "max_dd": 1.45,
+    "per_symbol": {
+      "SBIN.NS": {
+        "n": 6,
+        "w": 2,
+        "net": -48.52
+      },
+      "GOLDBEES.NS": {
+        "n": 4,
+        "w": 2,
+        "net": -21.92
+      },
+      "TATAPOWER.NS": {
+        "n": 3,
+        "w": 1,
+        "net": 88.66
+      },
+      "RELIANCE.NS": {
+        "n": 2,
+        "w": 0,
+        "net": -47.28
+      },
+      "TATASTEEL.NS": {
+        "n": 1,
+        "w": 0,
+        "net": -52.96
+      }
+    }
+  }
+]

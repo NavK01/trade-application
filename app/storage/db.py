@@ -11,12 +11,13 @@ cost so the dashboard can show gross P&L, fees, AI cost, and net P&L after AI.
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Generator
 
 from app.config import ACCOUNT_IDS, ACCOUNT_NAMES, DEFAULT_ACCOUNT_ID, settings
 from app.trading import market_hours
@@ -36,11 +37,16 @@ class DatabaseManager:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
+    @contextlib.contextmanager
+    def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
         conn = sqlite3.connect(str(self.db_path), timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     # ------------------------------------------------------------------
     # Schema
@@ -124,6 +130,93 @@ class DatabaseManager:
             """)
 
             cursor.execute("""
+                CREATE TABLE IF NOT EXISTS forecasts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT NOT NULL,
+                    run_date TEXT NOT NULL,
+                    forecast_date TEXT NOT NULL,
+                    horizon_days INTEGER NOT NULL,
+                    horizon_date TEXT NOT NULL,
+                    reference_price REAL NOT NULL,
+                    direction TEXT NOT NULL,
+                    expected_move_pct REAL DEFAULT 0.0,
+                    confidence_pct INTEGER DEFAULT 50,
+                    flat_band_pct REAL DEFAULT 1.0,
+                    catalysts TEXT,
+                    reasoning TEXT,
+                    model TEXT,
+                    tokens_used INTEGER DEFAULT 0,
+                    cost_inr REAL DEFAULT 0.0,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    resolved_at TEXT,
+                    resolved_price REAL,
+                    actual_direction TEXT,
+                    actual_move_pct REAL,
+                    direction_correct INTEGER,
+                    abs_error_pct REAL,
+                    realized_net_pct REAL,
+                    timestamp TEXT NOT NULL
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_forecasts_symbol_run
+                ON forecasts (symbol, run_date)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_forecasts_status
+                ON forecasts (status)
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS investment_calls (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT NOT NULL,
+                    run_date TEXT NOT NULL,
+                    call_date TEXT NOT NULL,
+                    horizon_days INTEGER NOT NULL,
+                    horizon_date TEXT NOT NULL,
+                    reference_price REAL NOT NULL,
+                    verdict TEXT NOT NULL,
+                    confidence_pct INTEGER DEFAULT 50,
+                    flat_band_pct REAL DEFAULT 2.0,
+                    band_low_pct REAL DEFAULT 0.0,
+                    band_high_pct REAL DEFAULT 0.0,
+                    who_is_trading TEXT,
+                    move_permanence TEXT,
+                    crash_risk TEXT,
+                    ownership_summary TEXT,
+                    insider_summary TEXT,
+                    catalysts TEXT,
+                    reasoning TEXT,
+                    why_bullets TEXT,
+                    model TEXT,
+                    tokens_used INTEGER DEFAULT 0,
+                    cost_inr REAL DEFAULT 0.0,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    resolved_at TEXT,
+                    resolved_price REAL,
+                    actual_move_pct REAL,
+                    verdict_correct INTEGER,
+                    max_drawdown_pct REAL,
+                    max_runup_pct REAL,
+                    realized_net_pct REAL,
+                    timestamp TEXT NOT NULL
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_investment_calls_symbol_run
+                ON investment_calls (symbol, run_date)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_investment_calls_status
+                ON investment_calls (status)
+            """)
+
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS learning_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     account_id TEXT NOT NULL,
@@ -182,6 +275,7 @@ class DatabaseManager:
                     stop_loss REAL,
                     target_price REAL,
                     hold_to_close INTEGER DEFAULT 0,
+                    delivery_hold INTEGER DEFAULT 0,
                     PRIMARY KEY (account_id, symbol)
                 )
             """)
@@ -232,6 +326,7 @@ class DatabaseManager:
             ("stop_loss", "REAL"),
             ("target_price", "REAL"),
             ("hold_to_close", "INTEGER DEFAULT 0"),
+            ("delivery_hold", "INTEGER DEFAULT 0"),
         ]:
             if name not in position_cols:
                 cursor.execute(f"ALTER TABLE open_positions ADD COLUMN {name} {ddl}")
@@ -293,10 +388,10 @@ class DatabaseManager:
                 if cursor.fetchone()["n"] == 0:
                     cursor.execute("""
                         INSERT INTO account_state
-                        (id, account_id, account_name, initial_capital, available_cash, total_realized_pnl, auto_execute, updated_at)
-                        VALUES (?, ?, ?, ?, ?, 0.0, ?, ?)
+                        (account_id, account_name, initial_capital, available_cash, total_realized_pnl, auto_execute, updated_at)
+                        VALUES (?, ?, ?, ?, 0.0, ?, ?)
                     """, (
-                        idx, account_id, name, init_cap, init_cap,
+                        account_id, name, init_cap, init_cap,
                         1 if settings.AUTO_EXECUTE_DEFAULT else 0, now,
                     ))
                 else:
@@ -411,12 +506,26 @@ class DatabaseManager:
         Supports both legacy call styles:
           save_account_state(cash, pnl, auto_execute=None, account_id="...")
           save_account_state(account_id, cash, pnl, auto_execute=None)
+
+        Calling with an account_id but no cash arguments (e.g. only
+        ``auto_execute``) preserves the stored cash/realized P&L instead of
+        resetting them, and does not raise IndexError.
         """
         if args and isinstance(args[0], str):
             account_id = args[0]
-            available_cash = args[1]
-            total_realized_pnl = args[2] if len(args) > 2 else 0.0
-            auto_execute = args[3] if len(args) > 3 else kwargs.get("auto_execute")
+            if len(args) >= 2:
+                available_cash = args[1]
+                total_realized_pnl = args[2] if len(args) > 2 else 0.0
+                auto_execute = args[3] if len(args) > 3 else kwargs.get("auto_execute")
+            else:
+                state = self.get_account_state(account_id)
+                available_cash = kwargs.get(
+                    "available_cash", state.get("available_cash", settings.INITIAL_CAPITAL_INR)
+                )
+                total_realized_pnl = kwargs.get(
+                    "total_realized_pnl", state.get("total_realized_pnl", 0.0)
+                )
+                auto_execute = kwargs.get("auto_execute")
         else:
             available_cash = args[0] if len(args) > 0 else kwargs.get("available_cash", settings.INITIAL_CAPITAL_INR)
             total_realized_pnl = args[1] if len(args) > 1 else kwargs.get("total_realized_pnl", 0.0)
@@ -462,6 +571,7 @@ class DatabaseManager:
         target_price = kwargs.get("target_price")
         entry_fee_inr = kwargs.get("entry_fee_inr", 0.0)
         hold_to_close = kwargs.get("hold_to_close", 0)
+        delivery_hold = kwargs.get("delivery_hold", 0)
         if len(args) >= 5:
             account_id, symbol, quantity, avg_price, created_at = args[:5]
             if len(args) >= 6:
@@ -472,6 +582,8 @@ class DatabaseManager:
                 entry_fee_inr = args[7]
             if len(args) >= 9:
                 hold_to_close = args[8]
+            if len(args) >= 10:
+                delivery_hold = args[9]
         elif len(args) == 4:
             symbol, quantity, avg_price, created_at = args
             account_id = kwargs.get("account_id", DEFAULT_ACCOUNT_ID)
@@ -486,12 +598,13 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO open_positions
-                (account_id, symbol, quantity, avg_price, entry_fee_inr, created_at, stop_loss, target_price, hold_to_close)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (account_id, symbol, quantity, avg_price, entry_fee_inr, created_at, stop_loss, target_price, hold_to_close, delivery_hold)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 account_id, symbol.upper(), quantity, round(avg_price, 2),
                 round(entry_fee_inr, 2), created_at, stop_loss, target_price,
                 1 if hold_to_close else 0,
+                1 if delivery_hold else 0,
             ))
             conn.commit()
 
@@ -685,6 +798,202 @@ class DatabaseManager:
             cursor.execute("SELECT * FROM predictions ORDER BY id DESC LIMIT ?", (limit,))
             return [dict(r) for r in cursor.fetchall()]
 
+    # ------------------------------------------------------------------
+    # Market-intelligence forecasts (analysis-only, scored over time)
+    # ------------------------------------------------------------------
+    def record_forecast(self, forecast: Dict[str, Any]) -> int:
+        """Persist a directional forecast and return its row id."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO forecasts (
+                    symbol, run_date, forecast_date, horizon_days, horizon_date,
+                    reference_price, direction, expected_move_pct, confidence_pct,
+                    flat_band_pct, catalysts, reasoning, model, tokens_used,
+                    cost_inr, status, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
+            """, (
+                str(forecast["symbol"]).upper(),
+                forecast["run_date"],
+                forecast["forecast_date"],
+                int(forecast["horizon_days"]),
+                forecast["horizon_date"],
+                float(forecast["reference_price"]),
+                str(forecast["direction"]).upper(),
+                float(forecast.get("expected_move_pct", 0.0)),
+                int(forecast.get("confidence_pct", 50)),
+                float(forecast.get("flat_band_pct", 1.0)),
+                forecast.get("catalysts", ""),
+                forecast.get("reasoning", ""),
+                forecast.get("model", settings.DEEPSEEK_MODEL),
+                int(forecast.get("tokens_used", 0)),
+                float(forecast.get("cost_inr", 0.0)),
+                forecast.get("timestamp", datetime.datetime.now(datetime.timezone.utc).isoformat()),
+            ))
+            conn.commit()
+            return int(cursor.lastrowid)
+
+    def has_forecast_for(self, symbol: str, run_date: str) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) AS n FROM forecasts WHERE symbol = ? AND run_date = ?",
+                (symbol.upper(), run_date),
+            )
+            return int(cursor.fetchone()["n"]) > 0
+
+    def get_open_forecasts(self) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM forecasts WHERE status = 'open' ORDER BY id ASC")
+            return [dict(r) for r in cursor.fetchall()]
+
+    def get_forecasts(
+        self,
+        limit: int = 200,
+        status: Optional[str] = None,
+        symbol: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            clauses: List[str] = []
+            params: List[Any] = []
+            if status:
+                clauses.append("status = ?")
+                params.append(status)
+            if symbol:
+                clauses.append("symbol = ?")
+                params.append(symbol.upper())
+            where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+            cursor.execute(
+                f"SELECT * FROM forecasts {where} ORDER BY id DESC LIMIT ?",
+                params + [limit],
+            )
+            return [dict(r) for r in cursor.fetchall()]
+
+    def resolve_forecast(self, forecast_id: int, **fields: Any) -> None:
+        """Mark a forecast resolved and write its realized outcome."""
+        allowed = {
+            "resolved_at", "resolved_price", "actual_direction", "actual_move_pct",
+            "direction_correct", "abs_error_pct", "realized_net_pct",
+        }
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return
+        updates["status"] = "resolved"
+        sets = ", ".join(f"{key} = ?" for key in updates)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"UPDATE forecasts SET {sets} WHERE id = ?",
+                list(updates.values()) + [int(forecast_id)],
+            )
+            conn.commit()
+
+    # ------------------------------------------------------------------
+    # Investment-intelligence calls (analysis-only, scored over a long horizon)
+    # ------------------------------------------------------------------
+    def record_investment_call(self, call: Dict[str, Any]) -> int:
+        """Persist a long-horizon investment call and return its row id."""
+        why = call.get("why_bullets", [])
+        if isinstance(why, (list, tuple)):
+            why = json.dumps([str(x)[:300] for x in why], ensure_ascii=False)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO investment_calls (
+                    symbol, run_date, call_date, horizon_days, horizon_date,
+                    reference_price, verdict, confidence_pct, flat_band_pct,
+                    band_low_pct, band_high_pct, who_is_trading, move_permanence,
+                    crash_risk, ownership_summary, insider_summary, catalysts,
+                    reasoning, why_bullets, model, tokens_used, cost_inr,
+                    status, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
+            """, (
+                str(call["symbol"]).upper(),
+                call["run_date"],
+                call["call_date"],
+                int(call["horizon_days"]),
+                call["horizon_date"],
+                float(call["reference_price"]),
+                str(call["verdict"]).upper(),
+                int(call.get("confidence_pct", 50)),
+                float(call.get("flat_band_pct", 2.0)),
+                float(call.get("band_low_pct", 0.0)),
+                float(call.get("band_high_pct", 0.0)),
+                str(call.get("who_is_trading", ""))[:200],
+                str(call.get("move_permanence", ""))[:60],
+                str(call.get("crash_risk", ""))[:20],
+                str(call.get("ownership_summary", ""))[:400],
+                str(call.get("insider_summary", ""))[:400],
+                str(call.get("catalysts", ""))[:300],
+                str(call.get("reasoning", ""))[:800],
+                why,
+                call.get("model", settings.DEEPSEEK_MODEL),
+                int(call.get("tokens_used", 0)),
+                float(call.get("cost_inr", 0.0)),
+                call.get("timestamp", datetime.datetime.now(datetime.timezone.utc).isoformat()),
+            ))
+            conn.commit()
+            return int(cursor.lastrowid)
+
+    def has_investment_call_for(self, symbol: str, run_date: str) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) AS n FROM investment_calls WHERE symbol = ? AND run_date = ?",
+                (symbol.upper(), run_date),
+            )
+            return int(cursor.fetchone()["n"]) > 0
+
+    def get_open_investment_calls(self) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM investment_calls WHERE status = 'open' ORDER BY id ASC")
+            return [dict(r) for r in cursor.fetchall()]
+
+    def get_investment_calls(
+        self,
+        limit: int = 200,
+        status: Optional[str] = None,
+        symbol: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            clauses: List[str] = []
+            params: List[Any] = []
+            if status:
+                clauses.append("status = ?")
+                params.append(status)
+            if symbol:
+                clauses.append("symbol = ?")
+                params.append(symbol.upper())
+            where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+            cursor.execute(
+                f"SELECT * FROM investment_calls {where} ORDER BY id DESC LIMIT ?",
+                params + [limit],
+            )
+            return [dict(r) for r in cursor.fetchall()]
+
+    def resolve_investment_call(self, call_id: int, **fields: Any) -> None:
+        """Mark an investment call resolved and write its realized outcome."""
+        allowed = {
+            "resolved_at", "resolved_price", "actual_move_pct", "verdict_correct",
+            "max_drawdown_pct", "max_runup_pct", "realized_net_pct",
+        }
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return
+        updates["status"] = "resolved"
+        sets = ", ".join(f"{key} = ?" for key in updates)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"UPDATE investment_calls SET {sets} WHERE id = ?",
+                list(updates.values()) + [int(call_id)],
+            )
+            conn.commit()
+
     def record_learning(self, category: str, insight: str, strategy_ref: Optional[str] = None,
                         symbol_ref: Optional[str] = None, impact_pnl: float = 0.0,
                         account_id: str = DEFAULT_ACCOUNT_ID):
@@ -758,6 +1067,51 @@ class DatabaseManager:
             else:
                 cursor.execute("SELECT * FROM daily_performance ORDER BY date DESC LIMIT ?", (limit,))
             return [dict(r) for r in cursor.fetchall()]
+
+    def get_daily_trade_pnl(self, account_id: str, limit: int = 30) -> List[Dict[str, Any]]:
+        """Per-day closed-trade P&L aggregated straight from the trades table.
+
+        This is the fallback source for the dashboard's Daily P&L view: the
+        ``daily_performance`` snapshot is only written at EOD square-off, so
+        without this a day with real trades would show nothing. Timestamps are
+        stored in UTC; they are converted to IST (UTC+5:30) before grouping so
+        the day boundary matches the NSE session. ``pnl_inr`` is already net of
+        both legs' fees; gross is reconstructed by adding the entry and exit
+        fees back.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT substr(datetime(timestamp, '+5 hours', '+30 minutes'), 1, 10) AS trade_date,
+                       COUNT(*) AS closed_trades,
+                       COALESCE(SUM(pnl_inr), 0.0) AS net_pnl,
+                       COALESCE(SUM(fee_inr + entry_fee_inr), 0.0) AS total_fees,
+                       COALESCE(SUM(CASE WHEN pnl_inr > 0 THEN 1 ELSE 0 END), 0) AS wins
+                FROM trades
+                WHERE account_id = ? AND action = 'SELL'
+                GROUP BY trade_date
+                ORDER BY trade_date DESC
+                LIMIT ?
+            """, (account_id, limit))
+            rows = [dict(r) for r in cursor.fetchall()]
+
+        out: List[Dict[str, Any]] = []
+        for r in rows:
+            closed = int(r.get("closed_trades", 0) or 0)
+            wins = int(r.get("wins", 0) or 0)
+            net = round(float(r.get("net_pnl", 0.0) or 0.0), 2)
+            fees = round(float(r.get("total_fees", 0.0) or 0.0), 2)
+            out.append({
+                "date": str(r.get("trade_date")),
+                "account_id": account_id,
+                "closed_trades": closed,
+                "trades_count": closed,
+                "net_pnl": net,
+                "gross_pnl": round(net + fees, 2),
+                "fees_inr": fees,
+                "win_rate_pct": round((wins / closed) * 100, 1) if closed else 0.0,
+            })
+        return out
 
     def get_last_daily_balance_before(self, account_id: str, date_str: str) -> Optional[float]:
         """Return the most recent prior-day closing equity for risk baselines."""

@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini 4 Quant Terminal (Optimized) • Indian Markets (NSE/BSE)</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- TradingView Lightweight Charts Library (Local) -->
+  <script src="/static/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <div class="terminal-app">
+    
+    <!-- 1. Top Navbar: Live Market Ticker & Terminal Actions -->
+    <header class="top-nav">
+      <div class="nav-brand">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-text">
+          <h1>GEMINI 4 QUANT TERMINAL (OPTIMIZED)</h1>
+          <span class="brand-sub">Gemini 4 Argon • Microstructure & Orderflow (TP 1.25%, SL 0.65%, Vol 2.0x, BE 1.05R) • Paper Trading</span>
+        </div>
+      </div>
+
+      <!-- Live Indian Market Indices Ticker -->
+      <div class="market-ticker" id="market-ticker">
+        <div id="market-status-pill" class="status-pill" title="NSE/BSE Trading Hours: 09:15 - 15:30 IST">
+          <span id="market-status-dot" class="status-dot dot-closed"></span>
+          <span id="market-status-text">Market Closed</span>
+        </div>
+        <div class="ticker-chip"><span class="ticker-sym">NIFTY:</span> <span id="nifty-val" class="ticker-val">--</span></div>
+        <div class="ticker-chip"><span class="ticker-sym">BANKNIFTY:</span> <span id="banknifty-val" class="ticker-val">--</span></div>
+        <div class="ticker-chip"><span class="ticker-sym">SENSEX:</span> <span id="sensex-val" class="ticker-val">--</span></div>
+        <div class="ticker-chip"><span class="ticker-sym">VIX:</span> <span id="vix-val" class="ticker-val">--</span></div>
+      </div>
+
+      <!-- Top Terminal Action Buttons -->
+      <div class="nav-actions">
+        <div class="server-badge" id="server-badge" title="Server Performance">
+          <span id="server-ram-tag">RAM: --%</span>
+          <span id="server-cpu-tag">CPU: --%</span>
+        </div>
+        <a href="http://crimson.southindia.cloudapp.azure.com" class="nav-btn btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;" title="Switch to DeepSeek Baseline (Port 7000)">⚡ DeepSeek Baseline (Port 7000)</a>
+        <button id="btn-pre-market-scan" class="nav-btn btn-accent" title="Pre-Market Scan">🌅 Pre-Market</button>
+        <button id="btn-reset-account" class="nav-btn btn-secondary" title="Reset ₹10,000 Dummy Account">🔄 Reset ₹10K</button>
+        <button id="btn-show-instructions" class="nav-btn btn-secondary">📖 Guide</button>
+        <div class="user-pill" id="user-auth-pill" style="display: none;">
+          <span class="user-badge" id="user-badge">👤 <span id="current-username">admin</span></span>
+          <button id="btn-logout" class="nav-btn btn-logout" title="Sign out">🚪</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 2. Master Single-Frame P&L & Capital Bar (Always Visible at a Glance) -->
+    <section class="master-pnl-strip">
+      <div class="pnl-metric-card capital-card">
+        <span class="pnl-label">ACCOUNT CAPITAL</span>
+        <strong id="pnl-capital-val" class="pnl-val">₹ 10,000.00</strong>
+        <span class="pnl-sub">Starting: ₹ 10,000.00</span>
+      </div>
+
+      <div class="pnl-metric-card realized-card">
+        <span class="pnl-label">TODAY'S NET REALIZED P&L</span>
+        <strong id="pnl-net-realized-val" class="pnl-val val-green">₹ 0.00 (+0.0%)</strong>
+        <span class="pnl-sub">After all Indian statutory taxes & fees</span>
+      </div>
+
+      <div class="pnl-metric-card unrealized-card">
+        <span class="pnl-label">LIVE UNREALIZED P&L</span>
+        <strong id="pnl-unrealized-val" class="pnl-val val-muted">₹ 0.00</strong>
+        <span id="pnl-open-positions-count" class="pnl-sub">0 Open Positions</span>
+      </div>
+
+      <div class="pnl-metric-card target-card">
+        <div class="target-card-header">
+          <span class="pnl-label">0.5% DAILY NET PROFIT GOAL</span>
+          <span id="target-lock-badge" class="badge-lock lock-active">TRADING ACTIVE</span>
+        </div>
+        <div class="target-progress-wrap">
+          <div class="target-bar-bg">
+            <div id="target-bar-fill" class="target-bar-fill" style="width: 0%;"></div>
+          </div>
+          <div class="target-legend">
+            <span>Current: <strong id="target-current-pct">0.00%</strong></span>
+            <span>Target: <strong>+0.50% Net</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pnl-metric-card guardrail-card">
+        <span class="pnl-label">CAPITAL PROTECTION GATES</span>
+        <div class="guardrail-badges">
+          <span id="gate-loss-count" class="gate-pill gate-ok">Losses: 0/2 Max</span>
+          <span id="gate-drawdown" class="gate-pill gate-ok">Max DD: -0.0% / -0.5%</span>
+          <span id="gate-window" class="gate-pill gate-window">Window: Institutional Drive</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Main Single-Frame Workstation (Left: Chart | Right: DeepSeek AI & Positions) -->
+    <main class="terminal-workspace">
+      
+      <!-- LEFT COLUMN: Professional Candlestick Chart & Order Execution Bar -->
+      <section class="chart-section">
+        <div class="chart-header">
+          <div class="chart-title-area">
+            <div class="chart-symbol-info">
+              <span id="chart-symbol-title" class="chart-symbol-name">SBIN</span>
+              <span id="chart-ltp" class="chart-ltp-val">₹ 970.25</span>
+              <span id="chart-change" class="chart-change-val val-green">+0.00%</span>
+            </div>
+            <!-- Quick Institutional Stock & Index Selector (Priced for ₹10,000 Capital) -->
+            <div class="index-chips" id="quick-symbols-bar">
+              <button class="chip-btn active" data-sym="SBIN">SBIN</button>
+              <button class="chip-btn" data-sym="ITC">ITC</button>
+              <button class="chip-btn" data-sym="TATASTEEL">TATASTEEL</button>
+              <button class="chip-btn" data-sym="TATAMOTORS">TATAMOTORS</button>
+              <button class="chip-btn" data-sym="ICICIBANK">ICICIBANK</button>
+              <button class="chip-btn" data-sym="AXISBANK">AXISBANK</button>
+              <button class="chip-btn" data-sym="NTPC">NTPC</button>
+              <button class="chip-btn" data-sym="COALINDIA">COALINDIA</button>
+              <span class="chip-divider">|</span>
+              <button class="chip-btn" data-sym="NIFTY">NIFTY</button>
+              <button class="chip-btn" data-sym="BANKNIFTY">BANKNIFTY</button>
+            </div>
+          </div>
+
+          <!-- Timeframe Selector -->
+          <div class="timeframe-group">
+            <button class="btn-tf" data-tf="1m" data-period="1d">1m</button>
+            <button class="btn-tf active" data-tf="5m" data-period="5d">5m</button>
+            <button class="btn-tf" data-tf="15m" data-period="5d">15m</button>
+            <button class="btn-tf" data-tf="1h" data-period="1mo">1h</button>
+            <button class="btn-tf" data-tf="1d" data-period="3mo">1D</button>
+          </div>
+        </div>
+
+        <!-- Candlestick Chart Canvas -->
+        <div class="chart-canvas-container">
+          <div id="tv-chart-container" class="tv-chart-canvas"></div>
+          <!-- Chart Overlays Legend -->
+          <div class="chart-legend-bar">
+            <span class="legend-badge"><span class="dot-col dot-blue"></span> 20 EMA</span>
+            <span class="legend-badge"><span class="dot-col dot-yellow"></span> 25 EMA</span>
+            <span class="legend-badge"><span class="dot-col dot-purple"></span> 200 EMA</span>
+            <span class="legend-badge"><span class="dot-col dot-orange"></span> VWAP</span>
+            <span class="legend-badge"><span class="dot-col dot-cyan"></span> POC / Value Area</span>
+            <span class="legend-badge"><span class="dot-col dot-amber"></span> Liquidity Sweep</span>
+            <span class="legend-badge"><span class="dot-col dot-green">▲</span> Buy Fill</span>
+            <span class="legend-badge"><span class="dot-col dot-red">▼</span> Sell Fill</span>
+          </div>
+        </div>
+
+        <!-- Rapid Order Execution Bar Directly Under Chart -->
+        <div class="order-execution-bar">
+          <div class="order-input-item">
+            <label>Asset:</label>
+            <input type="text" id="order-symbol-input" value="SBIN" class="order-input-sym" readonly />
+          </div>
+          <div class="order-input-item">
+            <label>Qty:</label>
+            <input type="number" id="fast-qty" value="2" min="1" max="1000" class="order-input-qty" />
+          </div>
+          <button id="btn-fast-buy" class="btn-order btn-buy-market">
+            <span>⚡ BUY MARKET</span>
+          </button>
+          <button id="btn-fast-sell" class="btn-order btn-sell-market">
+            <span>⚡ SELL MARKET</span>
+          </button>
+          <button id="btn-close-all" class="btn-order btn-close-positions" title="Square off active positions for this asset">
+            <span>✕ CLOSE POSITION</span>
+          </button>
+          <div class="latency-box">
+            <span id="latency-tag">Latency: 12ms</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT COLUMN: DeepSeek AI Prediction & Positions/Orders Ledger -->
+      <section class="deepseek-ai-section">
+        
+        <!-- CARD 1: DeepSeek AI Institutional Prediction -->
+        <div class="ai-prediction-card">
+          <div class="card-header-bar">
+            <div class="ai-model-tag">
+              <span class="pulse-indicator"></span>
+              <strong>DEEPSEEK AI PREDICTION</strong>
+              <span class="model-subtag">v4.1 Flash MaaS</span>
+            </div>
+            <button id="btn-refresh-ai-signal" class="btn-icon-refresh" title="Re-evaluate DeepSeek AI Signal">🔄 Refresh</button>
+          </div>
+
+          <!-- Recommendation Action Banner -->
+          <div class="signal-hero-banner" id="signal-hero-banner">
+            <div class="signal-action-wrap">
+              <span id="ai-sig-action" class="sig-action-badge sig-buy">BUY</span>
+              <div class="signal-setup-info">
+                <strong id="ai-sig-setup">BULLISH LIQUIDITY SWEEP REVERSAL</strong>
+                <span id="ai-sig-gex-regime" class="gex-regime-tag">POSITIVE GAMMA (Fade Breakouts)</span>
+              </div>
+            </div>
+            <div class="signal-conf-wrap">
+              <span class="conf-title">Confidence</span>
+              <strong id="ai-sig-conf" class="conf-val">88%</strong>
+            </div>
+          </div>
+
+          <!-- Trade Geometry Levels Grid -->
+          <div class="geometry-grid">
+            <div class="geom-cell">
+              <span class="geom-lbl">Entry Price</span>
+              <strong id="ai-sig-entry" class="geom-val">₹ 23,053.10</strong>
+            </div>
+            <div class="geom-cell">
+              <span class="geom-lbl">Stop Loss</span>
+              <strong id="ai-sig-sl" class="geom-val val-red">₹ 22,980.00</strong>
+            </div>
+            <div class="geom-cell">
+              <span class="geom-lbl">Target (1:2 R:R)</span>
+              <strong id="ai-sig-tp" class="geom-val val-green">₹ 23,200.00</strong>
+            </div>
+            <div class="geom-cell">
+              <span class="geom-lbl">Net Risk/Reward</span>
+              <strong id="ai-sig-rr" class="geom-val">1:2.0 Net</strong>
+            </div>
+          </div>
+
+          <!-- Statutory Charges & Net In-Bank Profit -->
+          <div class="fees-net-bar">
+            <div class="fee-col">
+              <span class="sub-fee-lbl">Statutory Deductions</span>
+              <strong id="ai-sig-fees" class="sub-fee-val">₹ 18.50</strong>
+            </div>
+            <div class="fee-col">
+              <span class="sub-fee-lbl">Breakeven</span>
+              <strong id="ai-sig-be" class="sub-fee-val">0.35 pts</strong>
+            </div>
+            <div class="fee-col highlight-net">
+              <span class="sub-fee-lbl">Expected Net P&L</span>
+              <strong id="ai-sig-net-pnl" class="sub-fee-val val-green">+₹ 3,660.00</strong>
+            </div>
+          </div>
+
+          <!-- DeepSeek's 3-Bullet Institutional Reasoning -->
+          <div class="ai-reasoning-box">
+            <span class="reasoning-title">DEEPSEEK ATTRIBUTION & REASONING</span>
+            <ul id="ai-reasoning-bullets" class="reasoning-list">
+              <li>Environment: Positive Gamma regime dampens volatility; fading false breakdown.</li>
+              <li>Location & Sweeps: Retail stops swept below PDL (22,656) with 52% lower wick.</li>
+              <li>Orderflow & Sizing: Smart money absorbed sellers; targeting Point of Control.</li>
+            </ul>
+          </div>
+
+          <!-- 1-Click Fast Execute Button -->
+          <button id="btn-execute-ai-signal" class="btn-execute-signal">
+            <span>⚡ EXECUTE GEMINI 4 SETUP (1-CLICK)</span>
+          </button>
+        </div>
+
+        <!-- CARD 2: Active Positions & Trade Order Ledger (Single Frame) -->
+        <div class="ledger-card">
+          <div class="ledger-tabs">
+            <button class="ledger-tab-btn active" id="tab-btn-positions" data-tab="tab-positions">
+              💼 Open Positions (<span id="ledger-pos-count">0</span>)
+            </button>
+            <button class="ledger-tab-btn" id="tab-btn-history" data-tab="tab-history">
+              📜 Trade Ledger (<span id="ledger-orders-count">0</span>)
+            </button>
+          </div>
+
+          <!-- Open Positions View -->
+          <div class="ledger-content active" id="tab-positions">
+            <div class="table-scroll-wrap">
+              <table class="ledger-table" id="positions-table">
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th>Qty</th>
+                    <th>Avg (₹)</th>
+                    <th>LTP (₹)</th>
+                    <th>Net P&L</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="positions-tbody">
+                  <tr><td colspan="6" class="table-empty">No active open positions.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Recent Executed Orders View -->
+          <div class="ledger-content" id="tab-history" style="display: none;">
+            <div class="table-scroll-wrap">
+              <table class="ledger-table" id="orders-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Asset</th>
+                    <th>Action</th>
+                    <th>Price</th>
+                    <th>Fees</th>
+                    <th>Net P&L</th>
+                  </tr>
+                </thead>
+                <tbody id="orders-tbody">
+                  <tr><td colspan="6" class="table-empty">No orders executed yet today.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- INSTRUCTIONS / USER GUIDE MODAL -->
+    <div id="instructions-modal" class="modal-backdrop" style="display: none;">
+      <div class="modal-box">
+        <div class="modal-head">
+          <h2>📖 DeepSeek Quant Terminal Guide</h2>
+          <button id="btn-close-modal" class="btn-modal-close">&times;</button>
+        </div>
+        <div class="modal-body-content">
+          <h3>⚡ 1. DeepSeek Institutional Architecture</h3>
+          <p>Powered by <strong>DeepSeek Flash MaaS (v4.1)</strong> with strict Indian market microstructure rules:</p>
+          <ul>
+            <li><strong>Environment (GEX)</strong>: Classifies Positive vs Negative Gamma to avoid false breakouts.</li>
+            <li><strong>Location</strong>: Pre-Market 4-Lines (PDH, PDL, PDC, 1H Swings) and Volume Profile (POC/VAH/VAL).</li>
+            <li><strong>Confirmation</strong>: Liquidity Sweeps with trapped wick delta absorption.</li>
+            <li><strong>Execution</strong>: Strict 1:2 Risk-to-Reward after all statutory Indian brokerage & taxes.</li>
+          </ul>
+
+          <h3>🛡️ 2. Capital Protection & 0.5% Daily Goal</h3>
+          <p>The terminal automatically halts new orders under 3 hard conditions:</p>
+          <ul>
+            <li><strong>Goal Locked</strong>: Net daily profit reaches <strong>+0.50%</strong> (prevents giving profits back).</li>
+            <li><strong>2-Strike Rule</strong>: Halts immediately if <strong>2 consecutive losses</strong> occur.</li>
+            <li><strong>Max Drawdown</strong>: Halts if intraday loss reaches <strong>-0.50%</strong> of capital.</li>
+          </ul>
+        </div>
+        <div class="modal-foot">
+          <button id="btn-got-it" class="nav-btn btn-accent">Got it, Let's Trade!</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOGIN MODAL -->
+    <div id="login-modal" class="modal-backdrop login-backdrop" style="display: none;">
+      <div class="modal-box login-modal-box">
+        <div class="login-head">
+          <div class="login-icon">🔐</div>
+          <h2>Administrator Sign In</h2>
+          <p class="login-sub">DeepSeek Quant Terminal</p>
+        </div>
+        <form id="login-form" onsubmit="return false;">
+          <div id="login-error-msg" class="login-error" style="display: none;"></div>
+          <div class="form-field">
+            <label for="login-username">Username</label>
+            <input type="text" id="login-username" class="modal-input" placeholder="admin" required />
+          </div>
+          <div class="form-field">
+            <label for="login-password">Password</label>
+            <input type="password" id="login-password" class="modal-input" placeholder="••••••••••••" required />
+          </div>
+          <button type="submit" id="btn-login-submit" class="nav-btn btn-accent btn-full">
+            <span>⚡ Unlock Terminal</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/static/gemini_app.js"></script>
+</body>
+</html>

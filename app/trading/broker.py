@@ -24,6 +24,7 @@ from app.storage.cache import cache
 from app.storage.db import DatabaseManager, db as default_db
 from app.trading import market_hours
 from app.trading.costs import calculate_buy_fee, calculate_sell_fee
+from app.trading.institutional_engine import calculate_indian_statutory_charges, INDEX_CONFIG
 from app.trading.risk_manager import RiskManager
 
 logger = logging.getLogger("app.trading.broker")
@@ -39,6 +40,8 @@ class Position:
         target_price: Optional[float] = None,
         entry_fee_inr: float = 0.0,
         hold_to_close: bool = False,
+        delivery_hold: bool = False,
+        margin_allocated: Optional[float] = None,
     ):
         self.symbol = symbol.upper()
         self.quantity = int(quantity)
@@ -47,10 +50,29 @@ class Position:
         self.stop_loss = round(float(stop_loss), 2) if stop_loss else None
         self.target_price = round(float(target_price), 2) if target_price else None
         self.entry_fee_inr = round(float(entry_fee_inr), 2)
-        # hold_to_close positions are trend trades: they exit only on the
-        # protective stop or the end-of-day square-off, never on a fixed
-        # target or a trailing profit lock.
         self.hold_to_close = bool(hold_to_close)
+        # delivery_hold marks a multi-day delivery swing position that must
+        # survive the 15:20 EOD square-off. Unlike ``hold_to_close`` (which
+        # only suppresses an early profit take on an intraday trade and is
+        # still flattened at the close), a delivery hold is closed only by its
+        # own stop/target or the strategy's maximum-hold time exit.
+        self.delivery_hold = bool(delivery_hold)
+        
+        # Index Options configuration
+        self.is_index_option = self.symbol in INDEX_CONFIG
+        idx_cfg = INDEX_CONFIG.get(self.symbol, {})
+        self.lot_size = idx_cfg.get("lot_size", 1)
+        self.delta = idx_cfg.get("delta", 0.50)
+        
+        if margin_allocated is not None:
+            self.margin_allocated = round(float(margin_allocated), 2)
+        else:
+            if self.is_index_option:
+                prem = self.avg_price * idx_cfg.get("atm_premium_pct", 0.0055)
+                self.margin_allocated = round(prem * self.lot_size * self.quantity, 2)
+            else:
+                self.margin_allocated = round(self.avg_price * self.quantity, 2)
+
         self.unrealized_pnl = 0.0
         self.unrealized_pnl_pct = 0.0
         self.created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -58,26 +80,40 @@ class Position:
     def update_price(self, new_price: float):
         if new_price and new_price > 0:
             self.current_price = round(float(new_price), 2)
-            self.unrealized_pnl = round(
-                (self.current_price - self.avg_price) * self.quantity - self.entry_fee_inr, 2
-            )
-            invested = self.avg_price * self.quantity
-            self.unrealized_pnl_pct = (
-                round((self.unrealized_pnl / invested) * 100, 2) if invested else 0.0
-            )
+            if self.is_index_option:
+                pts_diff = self.current_price - self.avg_price
+                self.unrealized_pnl = round(
+                    pts_diff * self.delta * self.lot_size * self.quantity - self.entry_fee_inr, 2
+                )
+                self.unrealized_pnl_pct = (
+                    round((self.unrealized_pnl / self.margin_allocated) * 100, 2)
+                    if self.margin_allocated > 0 else 0.0
+                )
+            else:
+                self.unrealized_pnl = round(
+                    (self.current_price - self.avg_price) * self.quantity - self.entry_fee_inr, 2
+                )
+                invested = self.avg_price * self.quantity
+                self.unrealized_pnl_pct = (
+                    round((self.unrealized_pnl / invested) * 100, 2) if invested else 0.0
+                )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "symbol": self.symbol,
             "quantity": self.quantity,
+            "lot_size": self.lot_size,
+            "is_index_option": self.is_index_option,
             "avg_price": self.avg_price,
             "current_price": self.current_price,
             "stop_loss": self.stop_loss,
             "target_price": self.target_price,
             "entry_fee_inr": self.entry_fee_inr,
             "hold_to_close": self.hold_to_close,
-            "invested_value": round(self.avg_price * self.quantity, 2),
-            "current_value": round(self.current_price * self.quantity, 2),
+            "delivery_hold": self.delivery_hold,
+            "margin_allocated": self.margin_allocated,
+            "invested_value": self.margin_allocated,
+            "current_value": round(self.margin_allocated + self.unrealized_pnl, 2),
             "unrealized_pnl": self.unrealized_pnl,
             "unrealized_pnl_pct": self.unrealized_pnl_pct,
             "created_at": self.created_at,
@@ -114,6 +150,7 @@ class Account:
                 target_price=p.get("target_price"),
                 entry_fee_inr=p.get("entry_fee_inr", 0.0),
                 hold_to_close=bool(p.get("hold_to_close", 0)),
+                delivery_hold=bool(p.get("delivery_hold", 0)),
             )
             pos.created_at = p.get("created_at", pos.created_at)
             self.positions[p["symbol"]] = pos
@@ -232,6 +269,7 @@ class BaseBroker(ABC):
         target_price: Optional[float] = None,
         exit_reason: Optional[str] = None,
         hold_to_close: bool = False,
+        delivery_hold: bool = False,
     ) -> Dict[str, Any]:
         pass
 
@@ -367,6 +405,7 @@ class PaperBroker(BaseBroker):
         target_price: Optional[float] = None,
         exit_reason: Optional[str] = None,
         hold_to_close: bool = False,
+        delivery_hold: bool = False,
     ) -> Dict[str, Any]:
         t0 = time.perf_counter_ns()
         sym = symbol.strip().upper()
@@ -396,6 +435,9 @@ class PaperBroker(BaseBroker):
                 (time.perf_counter_ns() - t0) / 1e6,
             )
 
+        is_index = sym in INDEX_CONFIG
+        idx_cfg = INDEX_CONFIG.get(sym, {})
+
         if act == "BUY":
             gate = self.risk.evaluate_entry(acc.account_id, acc, sym, quantity, fill_price)
             if not gate["approved"]:
@@ -405,40 +447,49 @@ class PaperBroker(BaseBroker):
                     (time.perf_counter_ns() - t0) / 1e6,
                 )
 
-            # Never silently exceed available cash. Shrink only when the
-            # requested quantity cannot be funded after realistic fees.
-            max_position_qty = int(
-                (acc.initial_capital * settings.MAX_POSITION_PCT) // fill_price
-            )
-            if quantity > max_position_qty:
+            if is_index:
+                lot_size = idx_cfg.get("lot_size", 25)
+                prem_pct = idx_cfg.get("atm_premium_pct", 0.0055)
+                prem_unit = round(fill_price * prem_pct, 2)
+                margin_allocated = round(prem_unit * lot_size * quantity, 2)
+                turnover = margin_allocated
+                stat_res = calculate_indian_statutory_charges(
+                    buy_value=turnover,
+                    sell_value=turnover,
+                    instrument_type="OPTIONS",
+                    exchange=idx_cfg.get("exchange", "NSE"),
+                    quantity=quantity * lot_size,
+                )
+                fee = round(stat_res["total_charges"] / 2.0, 2)
+            else:
+                margin_allocated = round(fill_price * quantity, 2)
+                turnover = margin_allocated
+                fee = calculate_buy_fee(turnover)
+
+            max_position_val = acc.initial_capital * settings.MAX_POSITION_PCT
+            if margin_allocated > max_position_val:
                 return self._reject(
                     order_id, acc, sym, act, quantity,
-                    f"Position cap exceeded: max {max_position_qty} shares at ₹{fill_price:.2f}.",
+                    f"Position cap exceeded: margin ₹{margin_allocated:,.2f} exceeds cap ₹{max_position_val:,.2f}.",
                     (time.perf_counter_ns() - t0) / 1e6,
                 )
 
-            while quantity > 0:
-                turnover = round(fill_price * quantity, 2)
-                fee = calculate_buy_fee(turnover)
-                if turnover + fee <= acc.available_cash + 0.001:
-                    break
-                quantity -= 1
-            if quantity <= 0:
+            if margin_allocated + fee > acc.available_cash + 0.001:
                 return self._reject(
                     order_id, acc, sym, act, 0,
-                    f"Insufficient cash: required at least ₹{fill_price + calculate_buy_fee(fill_price):,.2f}.",
+                    f"Insufficient cash: required ₹{margin_allocated + fee:,.2f}, available ₹{acc.available_cash:,.2f}.",
                     (time.perf_counter_ns() - t0) / 1e6,
                 )
 
-            turnover = round(fill_price * quantity, 2)
-            fee = calculate_buy_fee(turnover)
-            acc.available_cash = round(acc.available_cash - turnover - fee, 2)
+            acc.available_cash = round(acc.available_cash - margin_allocated - fee, 2)
             pos = Position(
                 sym, quantity, fill_price,
                 stop_loss=stop_loss,
                 target_price=target_price,
                 entry_fee_inr=fee,
                 hold_to_close=hold_to_close,
+                delivery_hold=delivery_hold,
+                margin_allocated=margin_allocated,
             )
             acc.positions[sym] = pos
             self.db.save_position(
@@ -451,6 +502,7 @@ class PaperBroker(BaseBroker):
                 target_price=pos.target_price,
                 entry_fee_inr=pos.entry_fee_inr,
                 hold_to_close=1 if pos.hold_to_close else 0,
+                delivery_hold=1 if pos.delivery_hold else 0,
             )
             pnl = 0.0
             gross_pnl = 0.0
@@ -469,13 +521,30 @@ class PaperBroker(BaseBroker):
                 )
 
             pos = acc.positions[sym]
-            turnover = round(fill_price * quantity, 2)
-            fee = calculate_sell_fee(turnover)
             entry_fee_alloc = round(pos.entry_fee_inr * (quantity / pos.quantity), 2)
-            gross_pnl = round((fill_price - pos.avg_price) * quantity, 2)
+            margin_freed = round(pos.margin_allocated * (quantity / pos.quantity), 2)
+
+            if pos.is_index_option:
+                pts_diff = fill_price - pos.avg_price
+                gross_pnl = round(pts_diff * pos.delta * pos.lot_size * quantity, 2)
+                turnover = margin_freed
+                stat_res = calculate_indian_statutory_charges(
+                    buy_value=turnover,
+                    sell_value=turnover,
+                    instrument_type="OPTIONS",
+                    exchange=idx_cfg.get("exchange", "NSE"),
+                    quantity=quantity * pos.lot_size,
+                )
+                fee = round(stat_res["total_charges"] / 2.0, 2)
+            else:
+                turnover = round(fill_price * quantity, 2)
+                gross_pnl = round((fill_price - pos.avg_price) * quantity, 2)
+                fee = calculate_sell_fee(turnover)
+
             pnl = round(gross_pnl - entry_fee_alloc - fee, 2)
 
-            acc.available_cash = round(acc.available_cash + turnover - fee, 2)
+            # Cash return: Released margin + gross_pnl - exit fee
+            acc.available_cash = round(acc.available_cash + margin_freed + gross_pnl - fee, 2)
             acc.realized_pnl = round(acc.realized_pnl + pnl, 2)
 
             remaining_qty = pos.quantity - quantity
@@ -485,6 +554,7 @@ class PaperBroker(BaseBroker):
             else:
                 # Partial exits must preserve the original bracket.
                 pos.quantity = remaining_qty
+                pos.margin_allocated = round(pos.margin_allocated - margin_freed, 2)
                 pos.entry_fee_inr = round(pos.entry_fee_inr - entry_fee_alloc, 2)
                 pos.update_price(fill_price)
                 self.db.save_position(
@@ -497,6 +567,7 @@ class PaperBroker(BaseBroker):
                     target_price=pos.target_price,
                     entry_fee_inr=pos.entry_fee_inr,
                     hold_to_close=1 if pos.hold_to_close else 0,
+                    delivery_hold=1 if pos.delivery_hold else 0,
                 )
 
             entry_fee = entry_fee_alloc
@@ -537,6 +608,7 @@ class PaperBroker(BaseBroker):
             "entry_fee_inr": entry_fee,
             "gross_pnl_inr": gross_pnl,
             "pnl_inr": pnl,
+            "net_pnl": pnl,
             "exit_price": exit_price,
             "exit_timestamp": exit_timestamp,
             "exit_reason": reason,

@@ -9,6 +9,8 @@ User=crimson
 WorkingDirectory=/home/crimson/GeminiAgent
 Environment="PATH=/home/crimson/GeminiAgent/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONPATH=/home/crimson/GeminiAgent"
+Environment="GOOGLE_APPLICATION_CREDENTIALS=/home/crimson/.config/gcloud/application_default_credentials.json"
+Environment="GOOGLE_CLOUD_PROJECT=super-512620"
 ExecStart=/home/crimson/GeminiAgent/venv/bin/python3 -u app/trading/continuous_optimizer.py
 Restart=always
 RestartSec=15

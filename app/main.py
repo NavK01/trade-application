@@ -1,9 +1,11 @@
 import asyncio
 import contextlib
+import datetime
 import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import hmac
+import pandas as pd
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Response, Request, Depends, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -25,8 +27,26 @@ from app.trading.market_feed import market_feed
 from app.trading.strategy_manager import strategy_manager
 from app.trading.scanner import scanner
 from app.trading.candles import get_symbol_candles
+from app.trading.institutional_engine import (
+    calculate_indian_statutory_charges,
+    compute_premarket_4lines,
+    compute_volume_profile,
+    compute_fibonacci_zones,
+    compute_option_chain_gex,
+    detect_liquidity_sweeps_and_absorption,
+    get_index_heavyweights_matrix,
+    get_sector_rotation_heatmap,
+    generate_ai_price_attribution,
+    evaluate_risk_guardrails,
+    generate_institutional_ai_signal,
+)
 from app.trading.skills.day_trader_adapter import day_trader
 from app.trading.sentiment_analyzer import sentiment_engine
+from app.trading.institutional_runner import institutional_runner
+from app.trading.swing_live_runner import swing_live_runner
+from app.trading.market_intel import market_intel
+from app.trading.investment_intel import investment_intel
+from app.trading.paper_truth import build_truth_report, load_frozen_baseline
 from app.system.metrics import get_system_metrics
 from app.system.tokens import token_tracker
 from app.system.logging_manager import (
@@ -58,21 +78,38 @@ logger = logging.getLogger("app.main")
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start background 5-minute Argon AI predictor, autonomous strategy manager, and market feed."""
+    """Start the validated swing runner, protective loops, and live market feed."""
     db.prune_historical_records()
     state = db.get_account_state()
     auto_exec = bool(state.get("auto_execute", settings.AUTO_EXECUTE_DEFAULT))
     strategy_manager.auto_execute = auto_exec
-    argon_predictor.auto_execute = auto_exec
+    swing_live_runner.auto_execute = auto_exec
+    # The legacy index/intraday engines were measured net-negative after fees.
+    # They stay off unless explicitly re-enabled with fresh walk-forward evidence.
+    legacy = bool(getattr(settings, "ENABLE_LEGACY_INTRADAY_ENGINES", False))
+    argon_predictor.auto_execute = auto_exec and legacy
+    institutional_runner.auto_execute = auto_exec and legacy
 
     market_feed.start_feed()
-    argon_predictor.start_background_loop()
+    institutional_runner.start_background_loop()
     strategy_manager.start_background_loop()
-    logger.info(f"Started Market Feed, Argon 5-Minute AI Predictor, and Strategy Manager. Auto-execute initialized to: {auto_exec}")
+    if getattr(settings, "SWING_LIVE_ENABLED", True):
+        swing_live_runner.start_background_loop()
+    if getattr(settings, "MARKET_INTEL_ENABLED", True):
+        market_intel.start_background_loop()
+    if getattr(settings, "INVESTMENT_INTEL_ENABLED", True):
+        investment_intel.start_background_loop()
+    logger.info(
+        "Started Market Feed, Strategy Manager, and Swing Live Runner. "
+        "Auto-execute: %s (legacy intraday engines: %s)", auto_exec, legacy,
+    )
     yield
     market_feed.stop_feed()
-    argon_predictor.stop_background_loop()
+    institutional_runner.stop_background_loop()
     strategy_manager.stop_background_loop()
+    swing_live_runner.stop_background_loop()
+    market_intel.stop_background_loop()
+    investment_intel.stop_background_loop()
     logger.info("Stopped background services.")
 
 app = FastAPI(
@@ -116,6 +153,7 @@ class FastOrderRequest(BaseModel):
     stop_loss: Optional[float] = None
     target_price: Optional[float] = None
     hold_to_close: Optional[bool] = False
+    delivery_hold: Optional[bool] = False
 
 class ClosePositionRequest(BaseModel):
     symbol: str
@@ -130,6 +168,21 @@ class SaveFileRequest(BaseModel):
     path: str
     content: str
 
+
+class InstitutionalFeeRequest(BaseModel):
+    buy_value: float
+    sell_value: float
+    instrument_type: Optional[str] = "INTRADAY_EQUITY"
+    exchange: Optional[str] = "NSE"
+    quantity: Optional[float] = 1.0
+
+
+class InstitutionalSignalRequest(BaseModel):
+    symbol: Optional[str] = "NIFTY"
+    daily_net_profit_pct: Optional[float] = 0.0
+    consecutive_losses: Optional[int] = 0
+    current_drawdown_pct: Optional[float] = 0.0
+
 @app.get("/")
 async def root():
     """Serve the Web Trading & Voice Dashboard."""
@@ -138,6 +191,7 @@ async def root():
         return FileResponse(index_file)
     return {"message": "Opus/DeepSeek quant backend is running."}
 
+@app.get("/api/health")
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Nginx, VM monitoring, and system diagnostics."""
@@ -154,6 +208,10 @@ async def health_check():
         "predictor_active": argon_predictor.is_running,
         "strategy_manager_active": strategy_manager.is_running,
         "market_feed_active": market_feed.is_running,
+        "swing_live_runner_active": swing_live_runner.is_running,
+        "market_intel_active": market_intel.is_running,
+        "investment_intel_active": investment_intel.is_running,
+        "legacy_intraday_engines_enabled": bool(getattr(settings, "ENABLE_LEGACY_INTRADAY_ENGINES", False)),
         "auto_execute": strategy_manager.auto_execute,
         "trading_mode": getattr(settings, "TRADING_MODE", "paper"),
         "system": metrics,
@@ -297,6 +355,7 @@ async def place_order(req: FastOrderRequest, auth_user: Dict[str, Any] = Depends
         stop_loss=req.stop_loss,
         target_price=req.target_price,
         hold_to_close=bool(req.hold_to_close),
+        delivery_hold=bool(req.delivery_hold),
     )
     return res
 
@@ -421,12 +480,21 @@ async def toggle_auto_execution(
     account_id: Optional[str] = Query(None),
     auth_user: Dict[str, Any] = Depends(require_auth),
 ):
-    """Enable or disable automatic execution for one or both paper accounts."""
+    """Enable or disable automatic execution of the validated swing edge.
+
+    The legacy index/intraday engines remain off unless ENABLE_LEGACY_INTRADAY_ENGINES
+    is set, so toggling auto-execute on runs only the walk-forward validated
+    multi-day swing strategy.
+    """
     strategy_manager.set_auto_execute(enabled, account_id=account_id)
-    argon_predictor.auto_execute = enabled
+    swing_live_runner.auto_execute = enabled
+    legacy = bool(getattr(settings, "ENABLE_LEGACY_INTRADAY_ENGINES", False))
+    argon_predictor.auto_execute = enabled and legacy
+    institutional_runner.auto_execute = enabled and legacy
     return {
         "auto_execute": enabled,
         "account_id": account_id or "all_accounts",
+        "legacy_intraday_engines_enabled": legacy,
         "market_status": strategy_manager.get_market_status(),
     }
 
@@ -502,8 +570,132 @@ async def get_daily_performance(
     limit: int = Query(30),
     auth_user: Dict[str, Any] = Depends(require_auth),
 ):
-    """Get daily performance history with gross, fees, AI cost, and net."""
-    return {"daily_history": db.get_daily_performance(account_id=account_id, limit=limit)}
+    """Get daily performance history with gross, fees, AI cost, and net.
+
+    Stored EOD snapshots are authoritative for the days they cover. Any day that
+    has closed trades but no snapshot (a fresh session before the 15:20 IST
+    square-off, or a day whose snapshot was never written) is reconstructed by
+    aggregating the trades table so the per-day view is never empty while real
+    P&L exists.
+    """
+    snapshots = db.get_daily_performance(account_id=account_id, limit=limit)
+    scope = account_id or DEFAULT_ACCOUNT_ID
+    snap_dates = {str(s.get("date")) for s in snapshots}
+    merged = list(snapshots)
+    for day in db.get_daily_trade_pnl(scope, limit=limit):
+        if day["date"] in snap_dates:
+            continue
+        net = day["net_pnl"]
+        base = settings.INITIAL_CAPITAL_INR or 1.0
+        merged.append({
+            "date": day["date"],
+            "account_id": scope,
+            "realized_pnl": net,
+            "gross_pnl": day["gross_pnl"],
+            "fees_inr": day["fees_inr"],
+            "trades_count": day["trades_count"],
+            "win_rate_pct": day["win_rate_pct"],
+            "net_profit_before_ai": net,
+            "net_profit_after_ai_cost": net,
+            "net_return_pct": round((net / base) * 100, 2),
+            "source": "trades",
+        })
+    merged.sort(key=lambda r: str(r.get("date")), reverse=True)
+    return {"daily_history": merged[:limit]}
+
+
+@app.get("/api/performance/paper-truth")
+async def get_paper_truth(
+    account_id: str = Query(DEFAULT_ACCOUNT_ID),
+    auth_user: Dict[str, Any] = Depends(require_auth),
+):
+    """Frozen-baseline paper-trading truth report for an account.
+
+    Compares realized closed-trade statistics against the frozen walk-forward
+    expectation and returns an on_track/underperforming/insufficient_sample
+    verdict. Read-only; it never places a trade.
+    """
+    try:
+        baseline = load_frozen_baseline()
+    except FileNotFoundError:
+        baseline = None
+    return build_truth_report(db, account_id, baseline=baseline)
+
+
+# -------------------------------------------------------------
+# MARKET INTELLIGENCE AGENT (scored, analysis-only forecasts)
+# -------------------------------------------------------------
+@app.get("/api/analysis/market-intel")
+async def get_market_intel_report(
+    limit: int = Query(200),
+    auth_user: Dict[str, Any] = Depends(require_auth),
+):
+    """Scored multi-day directional forecast report.
+
+    Every forecast is persisted with its reference price and horizon, then
+    resolved against the price that actually printed. Returns an
+    insufficient_sample/on_track/underperforming verdict. Analysis only: this
+    endpoint never places a trade.
+    """
+    safe_limit = min(max(1, limit), 1000)
+    report = market_intel.build_report(limit=safe_limit)
+    report["active"] = market_intel.is_running
+    report["enabled"] = bool(getattr(settings, "MARKET_INTEL_ENABLED", True))
+    report["stats"] = dict(market_intel.stats)
+    return report
+
+@app.post("/api/analysis/market-intel/run")
+async def run_market_intel(
+    force: bool = Query(False),
+    resolve: bool = Query(True),
+    auth_user: Dict[str, Any] = Depends(require_auth),
+):
+    """Run one market-intelligence cycle on demand (never trades).
+
+    ``resolve`` first scores any open forecasts whose horizon has a completed
+    bar; ``force`` bypasses the once-per-day idempotency guard.
+    """
+    resolved = await market_intel.resolve_due_forecasts() if resolve else {"status": "skipped"}
+    cycle = await market_intel.run_cycle(force=force)
+    return {"resolution": resolved, "cycle": cycle}
+
+# -------------------------------------------------------------
+# INVESTMENT INTELLIGENCE AGENT (scored, explainable, long-horizon)
+# -------------------------------------------------------------
+@app.get("/api/analysis/investment-intel")
+async def get_investment_intel_report(
+    limit: int = Query(200),
+    auth_user: Dict[str, Any] = Depends(require_auth),
+):
+    """Explainable, scored long-horizon investment-call report.
+
+    For every stock it reports WHO is buying/selling (institutional vs insider
+    flow), whether a move looks STRUCTURAL or TEMPORARY, an
+    ACCUMULATE/HOLD/AVOID/WATCH verdict with a plain-English explanation, and the
+    score of every past call against the price that actually printed. Analysis
+    only: this endpoint never places a trade.
+    """
+    safe_limit = min(max(1, limit), 1000)
+    report = investment_intel.build_report(limit=safe_limit)
+    report["active"] = investment_intel.is_running
+    report["enabled"] = bool(getattr(settings, "INVESTMENT_INTEL_ENABLED", True))
+    report["stats"] = dict(investment_intel.stats)
+    return report
+
+@app.post("/api/analysis/investment-intel/run")
+async def run_investment_intel(
+    force: bool = Query(False),
+    resolve: bool = Query(True),
+    auth_user: Dict[str, Any] = Depends(require_auth),
+):
+    """Run one investment-intelligence cycle on demand (never trades).
+
+    ``resolve`` first scores any open calls whose horizon has a completed bar;
+    ``force`` bypasses the once-per-day idempotency guard.
+    """
+    resolved = await investment_intel.resolve_due_calls() if resolve else {"status": "skipped"}
+    cycle = await investment_intel.run_cycle(force=force)
+    return {"resolution": resolved, "cycle": cycle}
 
 @app.get("/api/tokens/summary")
 async def get_token_accounting(
@@ -525,6 +717,134 @@ async def get_risk_state(
     """Daily loss lock, profit target lock, trade count, and AI cost."""
     account = execution_engine.get_account(account_id)
     return strategy_manager.risk.get_state(account_id, account)
+
+
+# -------------------------------------------------------------
+# INSTITUTIONAL TRADING TERMINAL & SMART MONEY ENGINE
+# -------------------------------------------------------------
+@app.get("/api/trading/institutional/overview")
+async def get_institutional_overview_endpoint(
+    symbol: str = Query("NIFTY"),
+):
+    """
+    Returns unified institutional market intelligence for NIFTY, BANK NIFTY, and SENSEX:
+    - Pre-Market 4-Lines (PDH, PDL, PDC, 1H Swings)
+    - Volume Profile (POC, VAH, VAL) & Fibonacci Zones
+    - Option Chain GEX & Regime (Positive vs Negative Gamma)
+    - Heavyweight point contributions & Sector Heatmap
+    - AI Price Attribution (3-bullet explanation)
+    - 0.5% Net Profit & Risk Guardrails Status
+    """
+    clean_sym = symbol.strip().upper()
+    candles_res = get_symbol_candles(symbol=clean_sym, interval="5m", period="5d")
+    spot = candles_res.get("latest_price", 0.0)
+    chg_pct = candles_res.get("change_percent", 0.0)
+
+    # GEX & Options Microstructure
+    gex_data = compute_option_chain_gex(clean_sym, spot_price=spot)
+
+    # Heavyweights & Sector Heatmap
+    heavyweights = get_index_heavyweights_matrix(clean_sym, spot_price=spot)
+    sectors = get_sector_rotation_heatmap()
+
+    # Pre-Market 4-Lines, Volume Profile, Fibonacci
+    four_lines = candles_res.get("four_lines", {})
+    volume_profile = candles_res.get("volume_profile", {})
+    fib_zones = candles_res.get("fibonacci_zones", {})
+
+    # Recent Sweep if any
+    recent_sweeps = [m for m in candles_res.get("markers", []) if "SWEEP" in m.get("text", "")]
+    latest_sweep_dict = None
+    if recent_sweeps:
+        latest_sweep_dict = {
+            "narrative": recent_sweeps[-1].get("text", ""),
+            "timestamp": recent_sweeps[-1].get("time", 0)
+        }
+
+    # AI 3-Bullet Price Attribution
+    attribution = generate_ai_price_attribution(
+        index_symbol=clean_sym,
+        spot=spot,
+        change_pct=chg_pct,
+        gex_data=gex_data,
+        recent_sweep=latest_sweep_dict,
+        heavyweights=heavyweights
+    )
+
+    # 0.5% Net Profit & Risk Guardrails
+    portfolio = execution_engine.get_portfolio_summary(DEFAULT_ACCOUNT_ID)
+    starting_eq = 10000.0
+    current_net_pnl = portfolio.get("total_pnl_inr", 0.0)
+    daily_net_profit_pct = round((current_net_pnl / starting_eq) * 100, 2)
+    current_drawdown_pct = max(0.0, round((-current_net_pnl / starting_eq) * 100, 2)) if current_net_pnl < 0 else 0.0
+
+    guardrails = evaluate_risk_guardrails(
+        daily_net_profit_pct=daily_net_profit_pct,
+        consecutive_losses=0,
+        current_drawdown_pct=current_drawdown_pct,
+        current_time=datetime.datetime.now().time(),
+        trade_risk_reward=2.0
+    )
+
+    return {
+        "symbol": clean_sym,
+        "spot_price": spot,
+        "change_percent": chg_pct,
+        "gex": gex_data,
+        "four_lines": four_lines,
+        "volume_profile": volume_profile,
+        "fibonacci_zones": fib_zones,
+        "heavyweights": heavyweights,
+        "sectors": sectors,
+        "attribution": attribution,
+        "guardrails": guardrails,
+        "daily_net_profit_pct": daily_net_profit_pct,
+        "daily_goal_pct": 0.50,
+        "daily_goal_reached": daily_net_profit_pct >= 0.50,
+    }
+
+
+@app.get("/api/trading/institutional/gex")
+async def get_institutional_gex_endpoint(
+    symbol: str = Query("NIFTY"),
+):
+    """Returns strike-by-strike GEX table, open interest, and gamma flip zone."""
+    candles_res = get_symbol_candles(symbol=symbol, interval="5m", period="1d")
+    spot = candles_res.get("latest_price", 23000.0)
+    return compute_option_chain_gex(symbol, spot_price=spot)
+
+
+@app.post("/api/trading/institutional/calculate-fees")
+async def calculate_fees_endpoint(req: InstitutionalFeeRequest):
+    """Calculates all Indian statutory charges, taxes, GST, and net breakeven points."""
+    return calculate_indian_statutory_charges(
+        buy_value=req.buy_value,
+        sell_value=req.sell_value,
+        instrument_type=req.instrument_type or "INTRADAY_EQUITY",
+        exchange=req.exchange or "NSE",
+        quantity=req.quantity or 1.0
+    )
+
+
+@app.post("/api/trading/institutional/ai-signal")
+async def generate_ai_signal_endpoint(req: InstitutionalSignalRequest):
+    """Generates 4-step institutional AI signal with 1:2 R:R and Indian statutory fee deductions."""
+    clean_sym = (req.symbol or "NIFTY").strip().upper()
+    candles_res = get_symbol_candles(symbol=clean_sym, interval="5m", period="5d")
+    spot = candles_res.get("latest_price", 0.0)
+    raw_candles = candles_res.get("candles", [])
+    df = pd.DataFrame(raw_candles)
+    if not df.empty and "open" in df.columns:
+        df = df.rename(columns={"open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"})
+
+    return generate_institutional_ai_signal(
+        symbol=clean_sym,
+        spot_price=spot,
+        df=df,
+        daily_net_profit_pct=req.daily_net_profit_pct or 0.0,
+        consecutive_losses=req.consecutive_losses or 0,
+        current_drawdown_pct=req.current_drawdown_pct or 0.0
+    )
 
 # -------------------------------------------------------------
 # INTERACTIVE CHATBOT (DEEPSEEK / CLAUDE OPUS)
@@ -693,6 +1013,7 @@ async def ws_market_stream(websocket: WebSocket):
             "watchlist": list(market_feed.cached_quotes.values()),
             "indices": get_indian_market_indices().get("indices", {}),
             "portfolio": execution_engine.get_portfolio_summary(),
+            "market_status": strategy_manager.get_market_status(),
         })
         while True:
             data = await q.get()
@@ -706,19 +1027,23 @@ async def ws_market_stream(websocket: WebSocket):
 
 @app.websocket("/ws/predictor")
 async def ws_predictor_stream(websocket: WebSocket):
-    """Stream Argon 5-minute AI prediction alerts and schedule updates."""
+    """Stream DeepSeek Institutional AI prediction alerts and schedule updates."""
     if not await verify_websocket_auth(websocket):
         return
 
     await websocket.accept()
-    q = argon_predictor.subscribe()
+    q = institutional_runner.subscribe()
     try:
-        if argon_predictor.last_prediction:
-            await websocket.send_json({
-                "type": "new_prediction",
-                "prediction": argon_predictor.last_prediction,
-                "next_run_timestamp": argon_predictor.next_run_timestamp,
-            })
+        # Send initial snapshot of latest institutional signals
+        await websocket.send_json({
+            "type": "institutional_update",
+            "cycle": institutional_runner.cycle_count,
+            "timestamp": institutional_runner.last_run_timestamp or datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "auto_execute": institutional_runner.auto_execute,
+            "market_open": market_hours.is_market_open(),
+            "signals": institutional_runner.latest_signals,
+            "portfolio": execution_engine.get_portfolio_summary(),
+        })
         while True:
             data = await q.get()
             await websocket.send_json(data)
@@ -727,7 +1052,7 @@ async def ws_predictor_stream(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Error in ws_predictor_stream: {e}")
     finally:
-        argon_predictor.unsubscribe(q)
+        institutional_runner.unsubscribe(q)
 
 # -------------------------------------------------------------
 # WORKSPACE CODE & FILE MANAGEMENT ENDPOINTS

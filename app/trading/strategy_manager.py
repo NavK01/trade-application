@@ -7,6 +7,8 @@ import datetime
 import logging
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
+
 from app.config import ACCOUNT_IDS, DEFAULT_ACCOUNT_ID, settings, create_genai_client
 from app.financial_advisor.india_market import get_indian_stock_quote, search_indian_market_news
 from app.storage.cache import cache
@@ -14,10 +16,17 @@ from app.storage.db import db
 from app.system.tokens import token_tracker
 from app.trading import market_hours
 from app.trading.execution_engine import execution_engine
+from app.trading.fee_aware_selector import select_fee_aware_setup
 from app.trading.risk_manager import RiskManager
 from app.trading.skills.day_trader_adapter import day_trader
 
 logger = logging.getLogger("app.trading.strategy_manager")
+
+# Accounts owned by the legacy Gemini-4 intraday dashboard (app.gemini_terminal).
+# They are NOT managed by this orchestrator's auto-execute toggle, so the main
+# app can never re-enable the intraday churner's account behind its back.
+LEGACY_DASHBOARD_ACCOUNTS = ("gemini_optimized",)
+MANAGED_ACCOUNT_IDS = tuple(a for a in ACCOUNT_IDS if a not in LEGACY_DASHBOARD_ACCOUNTS)
 
 BUDGET_WATCHLIST = [
     {"symbol": "ITC", "typical_price": 470.0, "category": "FMCG / High Dividend"},
@@ -74,7 +83,7 @@ class StrategyManager:
         return status
 
     def set_auto_execute(self, enabled: bool, account_id: Optional[str] = None) -> bool:
-        targets = [account_id] if account_id else list(ACCOUNT_IDS)
+        targets = [account_id] if account_id else list(MANAGED_ACCOUNT_IDS)
         for acc_id in targets:
             state = db.get_account_state(acc_id)
             db.save_account_state(
@@ -171,6 +180,9 @@ Do not promise returns. Markdown only."""
             if not acc:
                 continue
             for sym in list(acc.positions.keys()):
+                pos = acc.positions.get(sym)
+                if not pos or getattr(pos, "delivery_hold", False):
+                    continue
                 closed = await execution_engine.close_position(sym, account_id=acc_id, reason=reason)
                 if closed:
                     closed_orders.append(closed)
@@ -272,6 +284,42 @@ Do not promise returns. Markdown only."""
         )
 
     # ------------------------------------------------------------------
+    # Fee-aware entry selection
+    # ------------------------------------------------------------------
+    def select_fee_aware_entry(
+        self,
+        symbol: str,
+        bars: List[Dict[str, Any]],
+        prev_day_ohlc: Optional[Dict[str, float]] = None,
+        metrics: Optional[Dict[str, float]] = None,
+        interval: str = "5m",
+    ) -> Optional[Dict[str, Any]]:
+        """Return the best active fee-aware setup for ``symbol``'s latest bar.
+
+        ``bars`` is the current session's OHLCV history in ascending order
+        (dict records carrying ``open``/``high``/``low``/``close``/``volume``
+        and ``time``). ``prev_day_ohlc`` is the previous session's
+        ``{"high": .., "low": .., "close": ..}``. ``metrics`` optionally
+        carries the cross-sectional relative-strength/RVOL metrics for the RS
+        leader. Returns the setup dict when a fee-aware edge is present, else
+        None. This is the live counterpart of the research selector, so
+        orchestration can source entries from the walk-forward validated
+        fee-aware setups rather than only the legacy momentum edge.
+        """
+        if not bars:
+            return None
+        frame = pd.DataFrame(bars)
+        if frame.empty:
+            return None
+        setup = select_fee_aware_setup(
+            frame,
+            prev_day_ohlc=prev_day_ohlc,
+            interval=interval,
+            metrics=metrics,
+        )
+        return setup if setup.get("active") else None
+
+    # ------------------------------------------------------------------
     # Background loop
     # ------------------------------------------------------------------
     def start_background_loop(self):
@@ -327,6 +375,9 @@ Do not promise returns. Markdown only."""
                             if acc.positions:
                                 logger.warning("[%s] Daily loss limit hit; flattening all positions.", acc_id)
                                 for sym in list(acc.positions.keys()):
+                                    held = acc.positions.get(sym)
+                                    if held is not None and getattr(held, "delivery_hold", False):
+                                        continue
                                     await execution_engine.close_position(
                                         sym, account_id=acc_id, reason="daily_loss_limit"
                                     )
@@ -347,20 +398,10 @@ Do not promise returns. Markdown only."""
                             pos.update_price(live_p)
 
                             exit_reason = None
-                            if pos.hold_to_close:
-                                # Trend trade: exit only on the protective stop.
-                                # The end-of-day square-off handles the rest.
-                                if pos.stop_loss and pos.current_price <= pos.stop_loss:
-                                    exit_reason = "stop_loss"
-                            else:
-                                if pos.target_price and pos.current_price >= pos.target_price:
-                                    exit_reason = "target"
-                                elif pos.stop_loss and pos.current_price <= pos.stop_loss:
-                                    exit_reason = "stop_loss"
-                                elif pos.unrealized_pnl_pct >= 1.5:
-                                    exit_reason = "profit_trail"
-                                elif pos.unrealized_pnl_pct <= -1.2:
-                                    exit_reason = "hard_stop"
+                            if pos.target_price and pos.current_price >= pos.target_price:
+                                exit_reason = "target"
+                            elif pos.stop_loss and pos.current_price <= pos.stop_loss:
+                                exit_reason = "stop_loss"
                             if exit_reason:
                                 await execution_engine.close_position(
                                     sym, account_id=acc_id, reason=exit_reason
@@ -369,12 +410,15 @@ Do not promise returns. Markdown only."""
                     self._market_open_notified = False
 
                 if market_hours.is_near_market_close():
-                    has_positions = any(
-                        len(acc.positions) > 0
+                    has_intraday_positions = any(
+                        any(
+                            not getattr(pos, "delivery_hold", False)
+                            for pos in acc.positions.values()
+                        )
                         for acc_id in ACCOUNT_IDS
                         if (acc := execution_engine.get_account(acc_id)) is not None
                     )
-                    if has_positions:
+                    if has_intraday_positions:
                         logger.info("15:20 IST square-off window; flattening accounts.")
                         await self.auto_square_off_all_positions("eod_square_off")
 

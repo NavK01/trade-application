@@ -97,7 +97,7 @@ class IntradayStrategySuite:
     @classmethod
     def compute_technical_indicators(cls, df: pd.DataFrame) -> pd.DataFrame:
         """Calculates VWAP, EMAs, SuperTrend, Bollinger Bands, RSI, and Volume SMA."""
-        if len(df) < 5:
+        if len(df) < 2:
             return df
 
         # 1. EMAs (9, 20, 50)
@@ -195,6 +195,7 @@ class IntradayStrategySuite:
         df: pd.DataFrame,
         or_bars_count: int = 3,
         h1_end: str = "10:15",
+        min_h1_bars: int = 5,
     ) -> Dict[str, Any]:
         """
         Intraday Momentum Continuation (the validated primary edge).
@@ -212,6 +213,10 @@ class IntradayStrategySuite:
 
         Empirically this is the only setup in the suite with a positive
         expectancy after Indian intraday fees and paper slippage.
+
+        `min_h1_bars` guards against evaluating the first-hour trend before the
+        window has actually formed. It is 5 for 5-minute bars (the live default)
+        and 1 for hourly bars, where a single 09:15 bar already spans the hour.
         """
         if len(df) <= or_bars_count + 1:
             return {"active": False, "signal": "HOLD", "reason": "Insufficient bars"}
@@ -222,7 +227,7 @@ class IntradayStrategySuite:
 
         # 1. First-hour trend confirmation.
         h1 = df[df["time"] <= h1_end]
-        if len(h1) < 5:
+        if len(h1) < min_h1_bars:
             return {"active": False, "signal": "HOLD", "reason": "First hour still forming"}
         h1_close = float(h1.iloc[-1]["close"])
         h1_return = (h1_close / day_open) - 1.0
@@ -668,13 +673,28 @@ class IntradayStrategySuite:
         cls,
         bars: List[Dict[str, Any]],
         prev_day_ohlc: Optional[Dict[str, float]] = None,
+        interval: str = "5m",
     ) -> Dict[str, Any]:
         """
         Evaluates all 7 intraday strategies simultaneously on the bar series.
         Returns individual strategy evaluations, active triggers, and composite confluence score.
+
+        `interval` scales the opening-range and first-hour windows to the bar
+        size. For 5-minute bars (the live default) the opening range is 3 bars
+        (15m) and the first hour needs 5 bars. For hourly bars a single bar
+        already spans the hour, so both windows collapse to 1 bar.
         """
+        hourly = interval in ("1h", "60m", "90m")
+        or_bars_count = 1 if hourly else 3
+        min_h1_bars = 1 if hourly else 5
+        # Minimum bars needed to evaluate the suite. 5m bars need a full
+        # opening range plus the first-hour window (>=5). Hourly bars only have
+        # 7 per session, so the floor collapses to the opening range plus one
+        # completed bar (3).
+        min_bars = 3 if hourly else 5
+
         df = cls.prepare_dataframe(bars)
-        if len(df) < 5:
+        if len(df) < min_bars:
             return {
                 "confluence_score": 0,
                 "composite_signal": "HOLD",
@@ -692,8 +712,8 @@ class IntradayStrategySuite:
         p_close = prev_day_ohlc.get("close", cur_price) if prev_day_ohlc else cur_price
 
         results = {
-            "momentum": cls.evaluate_momentum_continuation(df),
-            "orb": cls.evaluate_orb(df),
+            "momentum": cls.evaluate_momentum_continuation(df, or_bars_count=or_bars_count, min_h1_bars=min_h1_bars),
+            "orb": cls.evaluate_orb(df, or_bars_count=or_bars_count),
             "vwap": cls.evaluate_vwap_trend(df),
             "ema_ribbon": cls.evaluate_ema_pullback(df),
             "supertrend": cls.evaluate_supertrend(df),
